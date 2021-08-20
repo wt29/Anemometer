@@ -78,9 +78,9 @@ int waitForWiFi = 20000 ;         // How long to wait for the WiFi to connect - 
 int startWiFi;
 int connectMillis = millis();     // this gets reset after every successful data push
 
-int poll = 60000;           // Poll the sensor every 60 seconds (or so)
-int lastRun = millis() - (poll + 1);
-int triggered;              // Count of the number of Hall triggers
+int poll = 60000;                        // Poll the sensor every 60 seconds (or so)
+int lastRun = millis() - (poll + 1);     // Force a run on boot. Includes connect to WiFi
+int triggered;                           // Count of the number of Hall triggers
 
 float elapsedMinutes = 0; // How much "minutes" have passed
 float revsPerMinute = 0;  // there are 2 transitions per magnet per rev
@@ -117,13 +117,13 @@ void loop() {
       ESP.restart();           // Kick it over and try from the beginning
   }
 
- server.handleClient();                    // Listen for HTTP requests from clients
+ server.handleClient();                         // Listen for HTTP requests from clients
  
- digitalWrite(LED_BUILTIN, ledState);
+ digitalWrite(LED_BUILTIN, ledState);           // only useful for demo. If running on battery, this should be commented out
  
 if ( millis() > lastRun + poll ) {              // only want this happening every so often - see poll value
   
-  elapsedMinutes = (millis()-lastRun)/1000/60;  // How much "minutes" have passed
+  elapsedMinutes = (millis()-lastRun)/1000/60;  // How much "minutes" have passed - this isn't totally accurate but sufficient for this purpose
   revsPerMinute = triggered/2/elapsedMinutes;   // there is 1 transition per magnet (2 of) per rev
   
   lastRun = millis();                           // don't want to add Wifi Connection latency to the poll
@@ -236,7 +236,6 @@ void handleNotFound(){
 
 ICACHE_RAM_ATTR void hall_ISR() 
 {
-// Serial.println( "Hall Triggered" );
 triggered += 1;
 ledState = !ledState;
 }
