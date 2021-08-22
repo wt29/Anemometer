@@ -54,8 +54,9 @@ IPAddress dns1( 8,8,8,8 );
 
 //Node and Network Setup
 #include <ESP8266WiFi.h>
+#include <ESP8266WiFiMulti.h>   // Include the Wi-Fi-Multi library
 #include <WiFiClient.h>
-#include <WiFiUdp.h>
+// #include <WiFiUdp.h>
 #include <ESP8266mDNS.h>
 #include <ESP8266WebServer.h>   // Include the WebServer library
 
@@ -69,8 +70,10 @@ const char* password = PASSWORD;
 const char* host = HOST;
 const char* APIKEY = MYAPIKEY;
 
+ESP8266WiFiMulti wifiMulti;     // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
 WiFiClient client;              // Instance of WiFi Client
 ESP8266WebServer server(80);    // Create a webserver object that listens for HTTP request on port 80
+
 void handleRoot();              // function prototypes for HTTP handlers
 void handleNotFound();
 
@@ -90,24 +93,30 @@ volatile bool ledState = LOW;
 
 void setup()
 {
-  Serial.begin(115200); //baud rate
+  Serial.begin(115200);     //baud rate
   Serial.println();
 
   pinMode( LED_BUILTIN, OUTPUT);
   pinMode( hallPin, INPUT);
   attachInterrupt(digitalPinToInterrupt(hallPin), hall_ISR, HIGH);
-
-if (MDNS.begin( nodeName )) {              // Start the mDNS responder for <nodeName>.local
+  
+  wifiMulti.addAP("deck", password );
+//  wifiMulti.addAP("LivingRoom", password );   // add Wi-Fi networks you want to connect to
+//  wifiMulti.addAP("HackDesk", password );     // All my passwords are the same
+//  wifiMulti.addAP("backdoor", password );
+  
+  if (MDNS.begin( nodeName )) {              // Start the mDNS responder for <nodeName>.local
     Serial.println("mDNS responder started");
   } else {
     Serial.println("Error setting up MDNS responder!");
   }
 
-server.on("/", handleRoot);               // Call the 'handleRoot' function when a client requests URI "/"
-server.onNotFound(handleNotFound);        // When a client requests an unknown URI (i.e. something other than "/"), call function "handleNotFound"
+  server.on("/", handleRoot);               // Call the 'handleRoot' function when a client requests URI "/"
+  server.onNotFound(handleNotFound);        // When a client requests an unknown URI (i.e. something other than "/"), call function "handleNotFound"
 
-server.begin();                           // Actually start the server
-Serial.println("HTTP server started");
+  server.begin();                           // Actually start the server
+  Serial.println("HTTP server started");
+
 }       // Setup
 
 void loop() {
@@ -194,22 +203,23 @@ void connectWiFi() {
 #ifdef STATIC_IP  
  WiFi.config( staticIP, gateway, subnet, dns1 );
 #endif
-  WiFi.begin(ssid, password);
   WiFi.hostname( nodeName );     // This will show up in your DHCP server
+  while (wifiMulti.run() != WL_CONNECTED) {
+//  WiFi.begin(ssid, password);
 
-  String strDebug = ssid ;
-  strDebug += "  ";
-  strDebug +=  password;
-  Serial.println( strDebug );
+    String strDebug = ssid ;
+    strDebug += "  ";
+    strDebug +=  password;
+    Serial.println( strDebug );
   
-  startWiFi = millis() ;        // When we started waiting
+    startWiFi = millis() ;        // When we started waiting
   // Loop and wait 
-  while ((WiFi.status() != WL_CONNECTED) && ( (millis() - startWiFi) < waitForWiFi ))
-  {
-    delay(500);
-    Serial.print(".");
+    while ((WiFi.status() != WL_CONNECTED) && ( (millis() - startWiFi) < waitForWiFi ))
+    {
+      delay(500);
+      Serial.print(".");
+    }
   }
-
   Serial.println("");
   Serial.print("IP Address: ");
   Serial.println( WiFi.localIP());
@@ -218,14 +228,19 @@ void connectWiFi() {
 }
 
 void handleRoot() {
-  String response = "<h1>You have reached the Anemometer</h1>";
-         response += "<br>";
-         response += "Number of triggerings <b>" + String(triggered) + "</b><br>";
-         response += "Current RPM is <b>" + String(revsPerMinute) + "</b><br>";
-         response += "Node Name <b>" + String(nodeName) + "</b><br>"; 
-         response += "Local IP is: <b>" + WiFi.localIP().toString() + "</b><br>";
-         response += "Free Heap Space <b>" + String(ESP.getFreeHeap()) + " bytes</b><br>";
-         response += "Software Version <b>" + String(VERSION) + "</b>";
+  String url = "<td><a href=http://" + String(host) + ">"+host+"</a><td></b><br>";
+  Serial.println( url );
+  String response =   "<h2>You have reached the Anemometer</h2>";
+//         response += "<br>";
+         response += "<p></p><table style=\"\width:1200\"\>";
+         response += "<tr><td>Number of triggerings</td><td><b>" + String(triggered) + "</b></td></tr><br>";
+         response += "<tr><td>Current RPM is </td><td><b>" + String(revsPerMinute) + "</b></td></tr><br>";
+         response += "<tr><td>Node Name </td><td><b>" + String(nodeName) + "</b></td></tr><br>"; 
+         response += "<tr><td>Currently logging to</td>" + url ; 
+         response += "<tr><td>Local IP is: </td><td><b>" + WiFi.localIP().toString() + "</b></td></tr><br>";
+         response += "<tr><td>Connected via AP:</td><td> <b>" + WiFi.SSID() + "</b></td></tr><br>";
+         response += "<tr><td>Free Heap Space </td><td><b>" + String(ESP.getFreeHeap()) + " bytes</b></td></tr><br>";
+         response += "<tr><td>Software Version</td><td> <b>" + String(VERSION) + "</b></td></tr></table>";
          
   server.send(200, "text/html", response );   // Send HTTP status 200 (Ok) and send some text to the browser/client
 }
