@@ -56,9 +56,9 @@ IPAddress dns1( 8,8,8,8 );
 #include <ESP8266WiFi.h>
 #include <ESP8266WiFiMulti.h>   // Include the Wi-Fi-Multi library
 #include <WiFiClient.h>
-// #include <WiFiUdp.h>
 #include <ESP8266mDNS.h>
 #include <ESP8266WebServer.h>   // Include the WebServer library
+#include <ArduinoOTA.h>
 
 // Needed to move this here as the IPAddress types aren't declared until the WiFi libs are loaded
 #include "data.h"             // Create this file from template above.  
@@ -88,34 +88,40 @@ int triggered;                           // Count of the number of Hall triggers
 float elapsedMinutes = 0; // How much "minutes" have passed
 float revsPerMinute = 0;  // there are 2 transitions per magnet per rev
   
-const int hallPin = D4;
+const int hallPin = D2;
 volatile bool ledState = LOW;
 
 void setup()
 {
   Serial.begin(115200);     //baud rate
-  Serial.println();
-
+  
   pinMode( LED_BUILTIN, OUTPUT);
   pinMode( hallPin, INPUT);
   attachInterrupt(digitalPinToInterrupt(hallPin), hall_ISR, HIGH);
   
   wifiMulti.addAP("deck", password );
-//  wifiMulti.addAP("LivingRoom", password );   // add Wi-Fi networks you want to connect to
-//  wifiMulti.addAP("HackDesk", password );     // All my passwords are the same
-//  wifiMulti.addAP("backdoor", password );
-  
-  if (MDNS.begin( nodeName )) {              // Start the mDNS responder for <nodeName>.local
-    Serial.println("mDNS responder started");
-  } else {
-    Serial.println("Error setting up MDNS responder!");
-  }
+  wifiMulti.addAP("LivingRoom", password );   // add Wi-Fi networks you want to connect to
+  wifiMulti.addAP("HackDesk", password );     // All my passwords are the same
+  wifiMulti.addAP("backdoor", password );
 
+  connectWiFi();        // This thing isn't any use without WiFi
+ 
+  if (MDNS.begin( nodeName )) {              // Start the mDNS responder for <nodeName>.local
+      Serial.println("mDNS responder started");
+    } 
+    else
+    {
+      Serial.println("Error setting up MDNS responder!");
+    }
+  
   server.on("/", handleRoot);               // Call the 'handleRoot' function when a client requests URI "/"
   server.onNotFound(handleNotFound);        // When a client requests an unknown URI (i.e. something other than "/"), call function "handleNotFound"
 
   server.begin();                           // Actually start the server
   Serial.println("HTTP server started");
+
+  ArduinoOTA.begin();                       // Remote updates
+  ArduinoOTA.setHostname( nodeName );
 
 }       // Setup
 
@@ -127,6 +133,7 @@ void loop() {
   }
 
  server.handleClient();                         // Listen for HTTP requests from clients
+ ArduinoOTA.handle();
  
  digitalWrite(LED_BUILTIN, ledState);           // only useful for demo. If running on battery, this should be commented out
  
@@ -220,10 +227,14 @@ void connectWiFi() {
       Serial.print(".");
     }
   }
-  Serial.println("");
-  Serial.print("IP Address: ");
-  Serial.println( WiFi.localIP());
-  Serial.printf("Connection status: %d\n", WiFi.status());
+  
+  if (WiFi.status() == WL_CONNECTED){
+  
+    Serial.println("");
+    Serial.print("IP Address: ");
+    Serial.println( WiFi.localIP());
+    Serial.printf("Connection status: %d\n", WiFi.status());
+  }
 
 }
 
