@@ -84,6 +84,7 @@ int connectMillis = millis();     // this gets reset after every successful data
 int poll = 60000;                        // Poll the sensor every 60 seconds (or so)
 int lastRun = millis() - (poll + 1);     // Force a run on boot. Includes connect to WiFi
 int triggered;                           // Count of the number of Hall triggers
+unsigned int totalTrigs;                 // Just for fun - number of triggerings since boot.
 
 float elapsedMinutes = 0; // How much "minutes" have passed
 float revsPerMinute = 0;  // there are 2 transitions per magnet per rev
@@ -239,18 +240,18 @@ void connectWiFi() {
 }
 
 void handleRoot() {
-  String url = "<td><a href=http://" + String(host) + ">"+host+"</a><td></b><br>";
+  String url = "<td><a href=http://" + String(host) + ">"+host+"</a><td></b>";
   Serial.println( url );
   String response =   "<h2>You have reached the Anemometer</h2>";
-//         response += "<br>";
-         response += "<p></p><table style=\"\width:1200\"\>";
-         response += "<tr><td>Number of triggerings</td><td><b>" + String(triggered) + "</b></td></tr><br>";
-         response += "<tr><td>Current RPM is </td><td><b>" + String(revsPerMinute) + "</b></td></tr><br>";
-         response += "<tr><td>Node Name </td><td><b>" + String(nodeName) + "</b></td></tr><br>"; 
+         response += "<p></p><table style=\"\width:600\"\>";
+//         response += "<tr><td>Number of triggerings</td><td><b>" + String(triggered) + "</b></td></tr>";
+         response += "<tr><td>Last calculated RPM was </td><td><b>" + String(revsPerMinute) + "</b></td></tr>";
+         response += "<tr><td>Total trigs since boot </td><td><b>" + String(totalTrigs) + "</b></td></tr>";
+         response += "<tr><td>Node Name </td><td><b>" + String(nodeName) + "</b></td></tr>"; 
          response += "<tr><td>Currently logging to</td>" + url ; 
-         response += "<tr><td>Local IP is: </td><td><b>" + WiFi.localIP().toString() + "</b></td></tr><br>";
-         response += "<tr><td>Connected via AP:</td><td> <b>" + WiFi.SSID() + "</b></td></tr><br>";
-         response += "<tr><td>Free Heap Space </td><td><b>" + String(ESP.getFreeHeap()) + " bytes</b></td></tr><br>";
+         response += "<tr><td>Local IP is: </td><td><b>" + WiFi.localIP().toString() + "</b></td></tr>";
+         response += "<tr><td>Connected via AP:</td><td> <b>" + WiFi.SSID() + "</b></td></tr>";
+         response += "<tr><td>Free Heap Space </td><td><b>" + String(ESP.getFreeHeap()) + " bytes</b></td></tr>";
          response += "<tr><td>Software Version</td><td> <b>" + String(VERSION) + "</b></td></tr></table>";
          
   server.send(200, "text/html", response );   // Send HTTP status 200 (Ok) and send some text to the browser/client
@@ -263,5 +264,6 @@ void handleNotFound(){
 ICACHE_RAM_ATTR void hall_ISR() 
 {
 triggered += 1;
+totalTrigs += 1;
 ledState = !ledState;
 }
