@@ -20,14 +20,15 @@ Also add that file.h or *.h to the .gitignore so you dont upload your wifi passw
 
 #define NODENAME "<Your NodeName>";                 // eg "Kitchen"  Required and UNIQUE per site.  Also used to find mdns eg NODENAME.local
 
-#define WIFI                                        // Default is true to enable WiFi
-#define LOCALSSID "<Your WiFi SSID>";               // eg "AwesomeWifi"  Required Can't use plain SSID as the WiFi library now defines it.
-#define PASSWORD "<Your WiFI Password>";            // eg "HorseStapleSomething"  Required
+#define APARRAY {<"ap1">,<"ap2">,<"ap3">,<"ap....">}   // An array of possible Access points - usually just 1!
+#define PASSARRAY {<"password1">,<"password2">,<"password3">,<"password...">}  // Array of paswords matching you APs
+#define APCOUNT 4  // How many you have defined
 
 #define HOST "<Your emoncms host fqdn>";            // eg  "emoncms.org" Required for logging. Note:just the host not the protocol
 #define MYAPIKEY "<Your emoncms API write key>";    // Required Get it from your MyAccount details in your emoncms instance
 
 If required, enable the following block to your data.h to set fixed IP addresses 
+
 #define STATIC_IP
 IPAddress staticIP( 192,168,1,22 );
 IPAddress gateway( 192,168,1,1 );
@@ -37,20 +38,11 @@ IPAddress dns1( 8,8,8,8 );
 -------------------------------------
 
 */
-#define VERSION 1.01            // First working version 
+#define VERSION 1.03            // Time Client, uptimes
+                                // AP Arrays, 5 minute averages 
                                 // 1.00 Initial version
 
 #warning Setup your data.h.  Refer to template in code.
-
-//debug mode
-#define DEBUG
-// If we define then DEBUG_LOG will log a string, otherwise
-// it will be ignored as a comment.
-#ifdef DEBUG
-#  define DEBUG_LOG(x) Serial.print(x)
-#else
-#  define DEBUG_LOG(x)
-#endif
 
 //Node and Network Setup
 #include <ESP8266WiFi.h>
@@ -59,6 +51,8 @@ IPAddress dns1( 8,8,8,8 );
 #include <ESP8266mDNS.h>
 #include <ESP8266WebServer.h>   // Include the WebServer library
 #include <ArduinoOTA.h>
+#include <NTPClient.h>
+#include <WiFiUdp.h>
 
 // Needed to move this here as the IPAddress types aren't declared until the WiFi libs are loaded
 #include "data.h"             // Create this file from template above.  
@@ -69,6 +63,9 @@ const char* ssid = LOCALSSID;
 const char* password = PASSWORD;
 const char* host = HOST;
 const char* APIKEY = MYAPIKEY;
+char* passwords[] = PASSARRAY;
+char* accessPoints[] = APARRAY;
+const int gustPercent = GUSTPERCENT;
 
 ESP8266WiFiMulti wifiMulti;     // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
 WiFiClient client;              // Instance of WiFi Client
@@ -79,31 +76,51 @@ void handleNotFound();
 
 int waitForWiFi = 20000 ;         // How long to wait for the WiFi to connect - 10 Seconds should be enough 
 int startWiFi;
+
 int connectMillis = millis();     // this gets reset after every successful data push
 
 int poll = 60000;                        // Poll the sensor every 60 seconds (or so)
 int lastRun = millis() - (poll + 1);     // Force a run on boot. Includes connect to WiFi
+
 int triggered;                           // Count of the number of Hall triggers
 unsigned int totalTrigs;                 // Just for fun - number of triggerings since boot.
+unsigned int numberOfPolls;              // start of trend analysis
+int gustSpeed = 0;                       // define gusts as + 20%
+int largestGust = 0;                     // The ubiquitoius self explanitory variable
+String timeOfLargestGust = "Not recorded yet" ;                        // how long ago the gust ran
 
-float elapsedMinutes = 0; // How much "minutes" have passed
-float revsPerMinute = 0;  // there are 2 transitions per magnet per rev
+float elapsedMinutes = 0;               // How much "minutes" have passed
+float revsPerMinute = 0;                // there are 2 transitions per magnet per rev
+
+float fiveMinuteAverage = 0.0 ;               // should be obvious what is going on
+int fiveMinuteSamples[5] = {0,0,0,0,0} ;      // roughly one poll every minute
   
 const int hallPin = D2;
 volatile bool ledState = LOW;
 
+const long utcOffsetInSeconds = 36000;       // Sydney is 10 hours ahead
+char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+
+// Define NTP Client to get time
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org", utcOffsetInSeconds);
+String timeString;
+String startTime;
+unsigned long startAbsoluteTime;    // How long have we been running for?
+
 void setup()
 {
-  Serial.begin(115200);     //baud rate
-  
+  Serial.begin(115200);     // baud rate
+  delay(1) ;                // allow the serial to init
+  Serial.println();         // clean up a little
+
   pinMode( LED_BUILTIN, OUTPUT);
   pinMode( hallPin, INPUT);
   attachInterrupt(digitalPinToInterrupt(hallPin), hall_ISR, HIGH);
-  
-  wifiMulti.addAP("deck", password );
-  wifiMulti.addAP("LivingRoom", password );   // add Wi-Fi networks you want to connect to
-  wifiMulti.addAP("HackDesk", password );     // All my passwords are the same
-  wifiMulti.addAP("backdoor", password );
+
+  for (int i=0; i<=APCOUNT; i++) {
+    wifiMulti.addAP( accessPoints[i], passwords[i] );     // Add all the APs and passwords from the arrays
+  }
 
   connectWiFi();        // This thing isn't any use without WiFi
  
@@ -124,14 +141,13 @@ void setup()
   ArduinoOTA.begin();                       // Remote updates
   ArduinoOTA.setHostname( nodeName );
 
-}       // Setup
+  timeClient.begin();
+  startTime = getInternetTime();
+  startAbsoluteTime = timeClient.getEpochTime();
+
+  }       // Setup
 
 void loop() {
-
- if ( millis() > 14400000) {   // Reboot every 4 hours - I have crappy internet. You may not need this
-      Serial.println("Rebooting");
-      ESP.restart();           // Kick it over and try from the beginning
-  }
 
  server.handleClient();                         // Listen for HTTP requests from clients
  ArduinoOTA.handle();
@@ -145,7 +161,25 @@ if ( millis() > lastRun + poll ) {              // only want this happening ever
   
   lastRun = millis();                           // don't want to add Wifi Connection latency to the poll
   triggered = 0;                                // Still gunna be counting in the background
+  numberOfPolls += 1;                            // Another poll recorded
+  fiveMinuteAverage = 0.0;
+
+  for (int i=3; i>=0; i--) {                     // Only pushing 4 samples along here
+   fiveMinuteSamples[i+1] = fiveMinuteSamples[i]; 
+   fiveMinuteAverage += ( fiveMinuteSamples[i+1] / 5 );     
+  }
   
+  fiveMinuteSamples[0] = revsPerMinute;
+  fiveMinuteAverage += (revsPerMinute / 5 );
+  
+  // Calculate if a gust has occured
+  if (revsPerMinute > ( fiveMinuteAverage + ( fiveMinuteAverage / (100 / gustPercent) ) ) ) {
+    gustSpeed = revsPerMinute;
+  }
+  if (gustSpeed > largestGust) {
+    largestGust = gustSpeed;
+    timeOfLargestGust = getInternetTime();  // Record the time it happened
+  }
   Serial.println();
   Serial.print("Elapsed Minutes : ");
   Serial.println( elapsedMinutes );
@@ -179,7 +213,7 @@ if ( millis() > lastRun + poll ) {              // only want this happening ever
            request += "/input/post?node=";
            request += nodeName;
            request += "&fulljson={\"anemometer\":";
-           request += revsPerMinute;
+           request += fiveMinuteAverage;     // attempt to smooth the graph
            request += "}&apikey=";
            request += APIKEY; 
 
@@ -213,15 +247,13 @@ void connectWiFi() {
 #endif
   WiFi.hostname( nodeName );     // This will show up in your DHCP server
   while (wifiMulti.run() != WL_CONNECTED) {
-//  WiFi.begin(ssid, password);
-
     String strDebug = ssid ;
     strDebug += "  ";
     strDebug +=  password;
     Serial.println( strDebug );
   
     startWiFi = millis() ;        // When we started waiting
-  // Loop and wait 
+
     while ((WiFi.status() != WL_CONNECTED) && ( (millis() - startWiFi) < waitForWiFi ))
     {
       delay(500);
@@ -230,7 +262,6 @@ void connectWiFi() {
   }
   
   if (WiFi.status() == WL_CONNECTED){
-  
     Serial.println("");
     Serial.print("IP Address: ");
     Serial.println( WiFi.localIP());
@@ -242,13 +273,28 @@ void connectWiFi() {
 void handleRoot() {
   String url = "<td><a href=http://" + String(host) + ">"+host+"</a><td></b>";
   Serial.println( url );
-  String response =   "<h2>You have reached the Anemometer</h2>";
+  String response =  "<h2>You have reached the Anemometer</h2>";
+         response += "<b>This device polls at roughly 1 minute intervals. It does not keep accurate time</b>";
          response += "<p></p><table style=\"\width:600\"\>";
-//         response += "<tr><td>Number of triggerings</td><td><b>" + String(triggered) + "</b></td></tr>";
-         response += "<tr><td>Last calculated RPM was </td><td><b>" + String(revsPerMinute) + "</b></td></tr>";
+         response += "<tr><td>Device started at </td><td><b>" + startTime + "</b></td></tr>";
+         response += "<tr><td>Current time </td><td><b>" + getInternetTime() + "</b></td></tr>";
+         response += "<tr><td>Last calculated RPM </td><td><b>" + String(revsPerMinute) + "</b></td></tr>";
+         response += "<tr><td>Rolling 5 minute average RPM </td><td><b>" + String(fiveMinuteAverage) + "</b></td></tr>";
+         response += "<tr><td>Last gust RPM was </td><td><b>" + String(gustSpeed) + "</b></td></tr>";
+         response += "<tr><td>Largest gust RPM detected </td><td><b>" + String(largestGust) + "</b> at <b>" + timeOfLargestGust + "</b></td></tr>";
+         response += "<tr><td>Total Polls/minutes </td><td><b>" + String(numberOfPolls) + "</b></td></tr>";
+         int runSecs = timeClient.getEpochTime() - startAbsoluteTime;
+         Serial.println( runSecs );
+         int upDays = abs( runSecs / 86400 );
+         int upHours = abs( runSecs / 3600 );
+         int upMins = abs( ( runSecs - ( upHours*3600 ) ) / 60 ) ;
+         int upSecs = ( runSecs - ( upMins*60 ) - (upHours*3600));
+         String upTime = String(upDays) + "d " + String( upHours ) + "h " + String(upMins) + "m " +String(upSecs) + "s";
+
+         response += "<tr><td>Uptime  </td><td><b>" + upTime + "</b></td></tr>";
          response += "<tr><td>Total trigs since boot </td><td><b>" + String(totalTrigs) + "</b></td></tr>";
          response += "<tr><td>Node Name </td><td><b>" + String(nodeName) + "</b></td></tr>"; 
-         response += "<tr><td>Currently logging to</td>" + url ; 
+         response += "<tr><td>Currently logging to</td>" + url + "</td></tr>"; 
          response += "<tr><td>Local IP is: </td><td><b>" + WiFi.localIP().toString() + "</b></td></tr>";
          response += "<tr><td>Connected via AP:</td><td> <b>" + WiFi.SSID() + "</b></td></tr>";
          response += "<tr><td>Free Heap Space </td><td><b>" + String(ESP.getFreeHeap()) + " bytes</b></td></tr>";
@@ -266,4 +312,11 @@ ICACHE_RAM_ATTR void hall_ISR()
 triggered += 1;
 totalTrigs += 1;
 ledState = !ledState;
+}
+
+String getInternetTime() {
+  timeClient.update();
+  Serial.println(timeClient.getFormattedTime());
+  return String( timeClient.getFormattedTime() );
+  
 }
