@@ -87,7 +87,7 @@ unsigned int totalTrigs;                 // Just for fun - number of triggerings
 unsigned int numberOfPolls;              // start of trend analysis
 int gustSpeed = 0;                       // define gusts as + 20%
 int largestGust = 0;                     // The ubiquitoius self explanitory variable
-String timeOfLargestGust = "Not recorded yet" ;                        // how long ago the gust ran
+unsigned long timeOfLargestGust;                        // how long ago the gust ran
 
 float elapsedMinutes = 0;               // How much "minutes" have passed
 float revsPerMinute = 0;                // there are 2 transitions per magnet per rev
@@ -178,7 +178,7 @@ if ( millis() > lastRun + poll ) {              // only want this happening ever
   }
   if (gustSpeed > largestGust) {
     largestGust = gustSpeed;
-    timeOfLargestGust = getInternetTime();  // Record the time it happened
+    timeOfLargestGust = timeClient.getEpochTime();
   }
   Serial.println();
   Serial.print("Elapsed Minutes : ");
@@ -281,14 +281,14 @@ void handleRoot() {
          response += "<tr><td>Last calculated RPM </td><td><b>" + String(revsPerMinute) + "</b></td></tr>";
          response += "<tr><td>Rolling 5 minute average RPM </td><td><b>" + String(fiveMinuteAverage) + "</b></td></tr>";
          response += "<tr><td>Last gust RPM was </td><td><b>" + String(gustSpeed) + "</b></td></tr>";
-         response += "<tr><td>Largest gust RPM detected </td><td><b>" + String(largestGust) + "</b> at <b>" + timeOfLargestGust + "</b></td></tr>";
+         response += "<tr><td>Largest gust RPM detected </td><td><b>" + String(largestGust) + "</b> at <b>" + fullDate( timeOfLargestGust ) + "</b></td></tr>";
          response += "<tr><td>Total Polls/minutes </td><td><b>" + String(numberOfPolls) + "</b></td></tr>";
+         
          int runSecs = timeClient.getEpochTime() - startAbsoluteTime;
-         Serial.println( runSecs );
          int upDays = abs( runSecs / 86400 );
-         int upHours = abs( runSecs / 3600 );
-         int upMins = abs( ( runSecs - ( upHours*3600 ) ) / 60 ) ;
-         int upSecs = ( runSecs - ( upMins*60 ) - (upHours*3600));
+         int upHours = abs( runSecs - ( upDays * 86400 ) ) / 3600;
+         int upMins = abs( ( runSecs - (upDays * 86400) - ( upHours*3600 ) ) / 60 ) ;
+         int upSecs = abs( runSecs - (upDays * 86400) - ( upHours*3600 ) - ( upMins*60 ) );
          String upTime = String(upDays) + "d " + String( upHours ) + "h " + String(upMins) + "m " +String(upSecs) + "s";
 
          response += "<tr><td>Uptime  </td><td><b>" + upTime + "</b></td></tr>";
@@ -316,7 +316,118 @@ ledState = !ledState;
 
 String getInternetTime() {
   timeClient.update();
-  Serial.println(timeClient.getFormattedTime());
   return String( timeClient.getFormattedTime() );
   
+}
+
+
+String fullDate ( unsigned long epoch ){
+
+static unsigned char month_days[12]={31,28,31,30,31,30,31,31,30,31,30,31};
+static unsigned char week_days[7] = {4,5,6,0,1,2,3}; //Thu=4, Fri=5, Sat=6, Sun=0, Mon=1, Tue=2, Wed=3
+
+unsigned char ntp_hour, ntp_minute, ntp_second, ntp_week_day, ntp_date, ntp_month, leap_days, leap_year_ind ;
+String dow, sMonth;
+unsigned short temp_days;
+
+unsigned int ntp_year, days_since_epoch, day_of_year; 
+
+    leap_days=0; 
+    leap_year_ind=0;
+    
+    ntp_second = epoch%60;
+    epoch /= 60;
+    ntp_minute = epoch%60;
+    epoch /= 60;
+    ntp_hour  = epoch%24;
+    epoch /= 24;
+        
+    days_since_epoch = epoch;      //number of days since epoch
+    ntp_week_day = week_days[days_since_epoch%7];  //Calculating WeekDay
+     
+    ntp_year = 1970+(days_since_epoch/365); // ball parking year, may not be accurate!
+ 
+    int i;
+    for (i=1972; i<ntp_year; i+=4)      // Calculating number of leap days since epoch/1970
+       if(((i%4==0) && (i%100!=0)) || (i%400==0)) leap_days++;
+            
+    ntp_year = 1970+((days_since_epoch - leap_days)/365); // Calculating accurate current year by (days_since_epoch - extra leap days)
+    day_of_year = ((days_since_epoch - leap_days)%365)+1;
+  
+   
+    if(((ntp_year%4==0) && (ntp_year%100!=0)) || (ntp_year%400==0))  
+     {
+        month_days[1]=29;     //February = 29 days for leap years
+        leap_year_ind = 1;    //if current year is leap, set indicator to 1 
+       }
+        else month_days[1]=28; //February = 28 days for non-leap years 
+
+         temp_days=0;
+   
+    for (ntp_month=0 ; ntp_month <= 11 ; ntp_month++) //calculating current Month
+       {
+           if (day_of_year <= temp_days) break; 
+           temp_days = temp_days + month_days[ntp_month];
+        }
+    
+    temp_days = temp_days - month_days[ntp_month-1]; //calculating current Date
+    ntp_date = day_of_year - temp_days;
+    
+   
+    switch(ntp_week_day) {
+                         
+                         case 0: dow = "Sunday";
+                                 break;
+                         case 1: dow = "Monday" ;
+                                 break;
+                         case 2: dow = "Tuesday";
+                                 break;
+                         case 3: dow = "Wednesday";
+                                 break;
+                         case 4: dow = "Thursday";
+                                 break;
+                         case 5: dow = "Friday";
+                                 break;
+                         case 6: dow = "Saturday";
+                                 break;
+                         default: break;        
+                         }
+  
+  switch(ntp_month) {
+                         
+                         case 1: sMonth = "January";
+                                 break;
+                         case 2: sMonth = "February";
+                                 break;
+                         case 3: sMonth = "March";
+                                 break;
+                         case 4: sMonth = "April";
+                                 break;
+                         case 5: sMonth = "May";
+                                 break;
+                         case 6: sMonth = "June";
+                                 break;
+                         case 7: sMonth = "July";
+                                 break;
+                         case 8: sMonth = "August";
+                                 break;
+                         case 9: sMonth = "September";
+                                 break;
+                         case 10: sMonth = "October";
+                                 break;
+                         case 11: sMonth = "November";
+                                 break;
+                         case 12: sMonth = "December";       
+                         default: break;        
+                         }
+/*  
+  printf(" %2d",ntp_date);
+  printf(", %d\n",ntp_year);
+  printf("TIME = %2d : %2d : %2d\n\n", ntp_hour,ntp_minute,ntp_second)  ;
+  printf("Days since Epoch: %d\n",days_since_epoch);
+  printf("Number of Leap days since EPOCH: %d\n",leap_days);
+  printf("Day of year = %d\n", day_of_year);
+  printf("Is Year Leap? %d\n",leap_year_ind);
+*/
+  return String( dow + " " + ntp_date + " " + sMonth + " " + ntp_hour + ":" + ntp_minute + ":" + ntp_second );
 }
