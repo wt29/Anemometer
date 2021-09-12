@@ -26,6 +26,9 @@ Also add that file.h or *.h to the .gitignore so you dont upload your wifi passw
 
 #define HOST "<Your emoncms host fqdn>";            // eg  "emoncms.org" Required for logging. Note:just the host not the protocol
 #define MYAPIKEY "<Your emoncms API write key>";    // Required Get it from your MyAccount details in your emoncms instance
+#define GUSTPERCENT                                 // How many RPM above the 5 minute average defines a "gust"
+#define CALIBRATION                                 // Future - a multiplier to convert RPM into whatever you are going to log - Knots, M/s, MPH etc
+#define TARGETUNITS  "M/s"                          // Future - once calibration is done, what will we be using as a unit.
 
 If required, enable the following block to your data.h to set fixed IP addresses 
 
