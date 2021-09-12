@@ -87,7 +87,7 @@ unsigned int totalTrigs;                 // Just for fun - number of triggerings
 unsigned int numberOfPolls;              // start of trend analysis
 int gustSpeed = 0;                       // define gusts as + 20%
 int largestGust = 0;                     // The ubiquitoius self explanitory variable
-unsigned long timeOfLargestGust;                        // how long ago the gust ran
+unsigned long timeOfLargestGust;         // how long ago the gust ran
 
 float elapsedMinutes = 0;               // How much "minutes" have passed
 float revsPerMinute = 0;                // there are 2 transitions per magnet per rev
