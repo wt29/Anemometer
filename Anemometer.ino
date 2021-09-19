@@ -41,7 +41,8 @@ IPAddress dns1( 8,8,8,8 );
 -------------------------------------
 
 */
-#define VERSION 1.03            // Time Client, uptimes
+#define VERSION 1.04            // Calibration values, reboot remote
+                                // Time Client, uptimes
                                 // AP Arrays, 5 minute averages 
                                 // 1.00 Initial version
 
@@ -59,11 +60,11 @@ IPAddress dns1( 8,8,8,8 );
 
 // Needed to move this here as the IPAddress types aren't declared until the WiFi libs are loaded
 #include "data.h"             // Create this file from template above.  
-                              // This means we dont keep uploading API key+password to GitHub. (data.h should be ignored in repository)
+                                   // This means we dont keep uploading API key+password to GitHub. (data.h should be ignored in repository)
 
 const char* nodeName = NODENAME;
-const char* ssid = LOCALSSID;
-const char* password = PASSWORD;
+// const char* ssid = LOCALSSID;
+// const char* password = PASSWORD;
 const char* host = HOST;
 const char* APIKEY = MYAPIKEY;
 char* passwords[] = PASSARRAY;
@@ -75,7 +76,8 @@ WiFiClient client;              // Instance of WiFi Client
 ESP8266WebServer server(80);    // Create a webserver object that listens for HTTP request on port 80
 
 void handleRoot();              // function prototypes for HTTP handlers
-void handleNotFound();
+void handleNotFound();          // Something it don't understand
+void rebootDevice();            // Kick it over remotely
 
 int waitForWiFi = 20000 ;         // How long to wait for the WiFi to connect - 10 Seconds should be enough 
 int startWiFi;
@@ -89,7 +91,7 @@ int triggered;                           // Count of the number of Hall triggers
 unsigned int totalTrigs;                 // Just for fun - number of triggerings since boot.
 unsigned int numberOfPolls;              // start of trend analysis
 int gustSpeed = 0;                       // define gusts as + 20%
-int largestGust = 0;                     // The ubiquitoius self explanitory variable
+int largestGust = 0;                     // The ubiquitoius self explanatory variable
 unsigned long timeOfLargestGust;         // how long ago the gust ran
 
 float elapsedMinutes = 0;               // How much "minutes" have passed
@@ -137,6 +139,7 @@ void setup()
   
   server.on("/", handleRoot);               // Call the 'handleRoot' function when a client requests URI "/"
   server.onNotFound(handleNotFound);        // When a client requests an unknown URI (i.e. something other than "/"), call function "handleNotFound"
+  server.on("/reboot",rebootDevice);        // Kick over remotely
 
   server.begin();                           // Actually start the server
   Serial.println("HTTP server started");
@@ -250,10 +253,6 @@ void connectWiFi() {
 #endif
   WiFi.hostname( nodeName );     // This will show up in your DHCP server
   while (wifiMulti.run() != WL_CONNECTED) {
-    String strDebug = ssid ;
-    strDebug += "  ";
-    strDebug +=  password;
-    Serial.println( strDebug );
   
     startWiFi = millis() ;        // When we started waiting
 
@@ -284,6 +283,10 @@ void handleRoot() {
          response += "<tr><td>Last calculated RPM </td><td><b>" + String(revsPerMinute) + "</b></td></tr>";
          response += "<tr><td>Rolling 5 minute average RPM </td><td><b>" + String(fiveMinuteAverage) + "</b></td></tr>";
          response += "<tr><td>Last gust RPM was </td><td><b>" + String(gustSpeed) + "</b></td></tr>";
+         response += "<tr><td>Calibration value is </td><td><b>" + String(CALIBRATION) + "</b></td></tr>";
+         response += "<tr><td>Target Units is </td><td><b>" + String(TARGETUNITS) + "</b></td></tr>";
+         response += "<tr><td>Calculated Wind Speed (5 minute Avg) is </td><td><b>" + String(fiveMinuteAverage/CALIBRATION) + String(TARGETUNITS) + "</b></td></tr>";
+
          response += "<tr><td>Largest gust RPM detected </td><td><b>" + String(largestGust) + "</b> at <b>" + fullDate( timeOfLargestGust ) + "</b></td></tr>";
          response += "<tr><td>Total Polls/minutes </td><td><b>" + String(numberOfPolls) + "</b></td></tr>";
          
@@ -308,6 +311,12 @@ void handleRoot() {
 
 void handleNotFound(){
   server.send(404, "text/plain", "404: Not found"); // Send HTTP status 404 (Not Found) when there's no handler for the URI in the request
+}
+
+void rebootDevice(){
+  server.send(200, "text/html", "<h1>Rebooting " + String(nodeName) + " in 5 seconds</h1>"); // Warn em
+  delay( 5000 );
+  ESP.restart();
 }
 
 ICACHE_RAM_ATTR void hall_ISR() 
