@@ -175,7 +175,7 @@ void loop() {
  
  digitalWrite(LED_BUILTIN, ledState);           // only useful for demo. If running on battery, this should be commented out
  
-if ( millis() > lastRun + poll ) {              // only want this happening every so often - see poll value
+ if ( millis() > lastRun + poll ) {             // only want this happening every so often - see poll value
   
   elapsedMinutes = (millis()-lastRun)/1000/60;  // How much "minutes" have passed - this isn't totally accurate but sufficient for this purpose
   revsPerMinute = triggered/2/elapsedMinutes;   // there is 1 transition per magnet (2 of) per rev
@@ -244,8 +244,8 @@ if ( millis() > lastRun + poll ) {              // only want this happening ever
            request += "/input/post?node=";
            request += nodeName;
            request += "&fulljson={\"anemometer\":";
-           request += fiveMinuteAverage;     // attempt to smooth the graph
-           request += "&fulljson={\"raingauge\":";
+           request += fiveMinuteAverage;        // attempt to smooth the graph
+           request += ",\"raingauge\":";
            request += rg_fiveMinuteAverage;     // attempt to smooth the graph
            request += "}&apikey=";
            request += APIKEY; 
@@ -305,7 +305,7 @@ void handleRoot() {
   String response =  "<h2>You have reached the Anemometer</h2>";
          response += "<b>This device polls at approximately 1 minute intervals.</b>";
          response += "<p></p><table style=\"\width:600\"\>";
-         response += "<tr><td>VCC </td><td><b>" + String( ESP.getVcc()/1000 ) + "</b></td></tr>";
+         response += "<tr><td>VCC </td><td><b>" + String( ESP.getVcc()/1000.00 ) + "</b></td></tr>";
          response += "<tr><td>Current time </td><td><b>" + getInternetTime() + "</b></td></tr>";
          response += "<tr><td>Last calculated RPM </td><td><b>" + String(revsPerMinute) + "</b></td></tr>";
          response += "<tr><td>Rolling 5 minute average RPM </td><td><b>" + String(fiveMinuteAverage) + "</b></td></tr>";
