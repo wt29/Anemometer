@@ -60,11 +60,9 @@ IPAddress dns1( 8,8,8,8 );
 
 // Needed to move this here as the IPAddress types aren't declared until the WiFi libs are loaded
 #include "data.h"             // Create this file from template above.  
-                                   // This means we dont keep uploading API key+password to GitHub. (data.h should be ignored in repository)
+                              // This means we dont keep uploading API key+password to GitHub. (data.h should be ignored in repository)
 
 const char* nodeName = NODENAME;
-// const char* ssid = LOCALSSID;
-// const char* password = PASSWORD;
 const char* host = HOST;
 const char* APIKEY = MYAPIKEY;
 char* passwords[] = PASSARRAY;
@@ -95,13 +93,23 @@ int largestGust = 0;                     // The ubiquitoius self explanatory var
 unsigned long timeOfLargestGust;         // how long ago the gust ran
 
 float elapsedMinutes = 0;               // How much "minutes" have passed
-float revsPerMinute = 0;                // there are 2 transitions per magnet per rev
 
+float revsPerMinute = 0;                // there are 2 transitions per magnet per rev
 float fiveMinuteAverage = 0.0 ;               // should be obvious what is going on
 int fiveMinuteSamples[5] = {0,0,0,0,0} ;      // roughly one poll every minute
+
+float rg_trigsPerMinute = 0.0;
+float rg_fiveMinuteAverage = 0.0 ;               // should be obvious what is going on
+int rg_fiveMinuteSamples[5] = {0,0,0,0,0} ;      // roughly one poll every minute
   
 const int hallPin = D2;
 volatile bool ledState = LOW;
+
+#ifdef RAINGAUGE
+const int rainGaugePin = D6;
+int rg_triggered;                           // Count of the number of Hall triggers
+unsigned int rg_totalTrigs;                 // Just for fun - number of triggerings since boot.
+#endif
 
 const long utcOffsetInSeconds = 36000;       // Sydney is 10 hours ahead
 char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
@@ -109,6 +117,8 @@ char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursd
 // Define NTP Client to get time
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org", utcOffsetInSeconds);
+ADC_MODE(ADC_VCC);
+
 String timeString;
 String startTime;
 unsigned long startAbsoluteTime;    // How long have we been running for?
@@ -123,6 +133,11 @@ void setup()
   pinMode( hallPin, INPUT);
   attachInterrupt(digitalPinToInterrupt(hallPin), hall_ISR, HIGH);
 
+#ifdef RAINGAUGE
+  pinMode( rainGaugePin, INPUT_PULLUP );
+  attachInterrupt(digitalPinToInterrupt(rainGaugePin), rainGauge_ISR, HIGH);
+#endif
+  
   for (int i=0; i<=APCOUNT; i++) {
     wifiMulti.addAP( accessPoints[i], passwords[i] );     // Add all the APs and passwords from the arrays
   }
@@ -165,18 +180,28 @@ if ( millis() > lastRun + poll ) {              // only want this happening ever
   elapsedMinutes = (millis()-lastRun)/1000/60;  // How much "minutes" have passed - this isn't totally accurate but sufficient for this purpose
   revsPerMinute = triggered/2/elapsedMinutes;   // there is 1 transition per magnet (2 of) per rev
   
+  rg_trigsPerMinute = rg_triggered/elapsedMinutes;   // How many triggers of the rg/minute
+  
   lastRun = millis();                           // don't want to add Wifi Connection latency to the poll
   triggered = 0;                                // Still gunna be counting in the background
-  numberOfPolls += 1;                            // Another poll recorded
+  numberOfPolls += 1;                           // Another poll recorded
   fiveMinuteAverage = 0.0;
+  rg_fiveMinuteAverage = 0.0;
 
   for (int i=3; i>=0; i--) {                     // Only pushing 4 samples along here
    fiveMinuteSamples[i+1] = fiveMinuteSamples[i]; 
    fiveMinuteAverage += ( fiveMinuteSamples[i+1] / 5 );     
+
+   rg_fiveMinuteSamples[i+1] = rg_fiveMinuteSamples[i]; 
+   rg_fiveMinuteAverage += ( rg_fiveMinuteSamples[i+1] / 5 );     
+  
   }
   
   fiveMinuteSamples[0] = revsPerMinute;
   fiveMinuteAverage += (revsPerMinute / 5 );
+
+  rg_fiveMinuteSamples[0] = rg_trigsPerMinute;
+  rg_fiveMinuteAverage += ( rg_trigsPerMinute / 5 );
   
   // Calculate if a gust has occured
   if (revsPerMinute > ( fiveMinuteAverage + ( fiveMinuteAverage / (100 / gustPercent) ) ) ) {
@@ -220,6 +245,8 @@ if ( millis() > lastRun + poll ) {              // only want this happening ever
            request += nodeName;
            request += "&fulljson={\"anemometer\":";
            request += fiveMinuteAverage;     // attempt to smooth the graph
+           request += "&fulljson={\"raingauge\":";
+           request += rg_fiveMinuteAverage;     // attempt to smooth the graph
            request += "}&apikey=";
            request += APIKEY; 
 
@@ -276,9 +303,9 @@ void handleRoot() {
   String url = "<td><a href=http://" + String(host) + ">"+host+"</a><td></b>";
   Serial.println( url );
   String response =  "<h2>You have reached the Anemometer</h2>";
-         response += "<b>This device polls at roughly 1 minute intervals. It does not keep accurate time</b>";
+         response += "<b>This device polls at approximately 1 minute intervals.</b>";
          response += "<p></p><table style=\"\width:600\"\>";
-         response += "<tr><td>Device started at </td><td><b>" + startTime + "</b></td></tr>";
+         response += "<tr><td>VCC </td><td><b>" + String( ESP.getVcc()/1000 ) + "</b></td></tr>";
          response += "<tr><td>Current time </td><td><b>" + getInternetTime() + "</b></td></tr>";
          response += "<tr><td>Last calculated RPM </td><td><b>" + String(revsPerMinute) + "</b></td></tr>";
          response += "<tr><td>Rolling 5 minute average RPM </td><td><b>" + String(fiveMinuteAverage) + "</b></td></tr>";
@@ -289,6 +316,8 @@ void handleRoot() {
 
          response += "<tr><td>Largest gust RPM detected </td><td><b>" + String(largestGust) + "</b> at <b>" + fullDate( timeOfLargestGust ) + "</b></td></tr>";
          response += "<tr><td>Total Polls/minutes </td><td><b>" + String(numberOfPolls) + "</b></td></tr>";
+
+         response += "<tr><td>Rain Gauge 5 minute triggers </td><td><b>" + String(rg_fiveMinuteAverage) + "</b></td></tr>";
          
          int runSecs = timeClient.getEpochTime() - startAbsoluteTime;
          int upDays = abs( runSecs / 86400 );
@@ -323,6 +352,13 @@ ICACHE_RAM_ATTR void hall_ISR()
 {
 triggered += 1;
 totalTrigs += 1;
+ledState = !ledState;
+}
+
+ICACHE_RAM_ATTR void rainGauge_ISR() 
+{
+rg_triggered += 1;
+rg_totalTrigs += 1;
 ledState = !ledState;
 }
 
