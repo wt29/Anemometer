@@ -14,7 +14,7 @@ e.g. create a "kitchen.h" and change the local code to just include kitchen.h?
 Also add that file.h or *.h to the .gitignore so you dont upload your wifi password to github!
 
 -------------------------------------
-//template for data.h
+// template for data.h
 
 //** Node and Network Setup
 
@@ -29,6 +29,8 @@ Also add that file.h or *.h to the .gitignore so you dont upload your wifi passw
 #define GUSTPERCENT                                 // How many RPM above the 5 minute average defines a "gust"
 #define CALIBRATION                                 // Future - a multiplier to convert RPM into whatever you are going to log - Knots, M/s, MPH etc
 #define TARGETUNITS  "M/s"                          // Future - once calibration is done, what will we be using as a unit.
+
+#define RAINGAUGE                                   // Experimental support for Hydreon RG-11 Rain guage
 
 If required, enable the following block to your data.h to set fixed IP addresses 
 
