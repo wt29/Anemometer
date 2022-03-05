@@ -100,17 +100,17 @@ float revsPerMinute = 0;                // there are 2 transitions per magnet pe
 float fiveMinuteAverage = 0.0 ;               // should be obvious what is going on
 int fiveMinuteSamples[5] = {0,0,0,0,0} ;      // roughly one poll every minute
 
-float rg_trigsPerMinute = 0.0;
-float rg_fiveMinuteAverage = 0.0 ;               // should be obvious what is going on
-int rg_fiveMinuteSamples[5] = {0,0,0,0,0} ;      // roughly one poll every minute
   
 const int hallPin = D2;
 volatile bool ledState = LOW;
 
 #ifdef RAINGAUGE
 const int rainGaugePin = D6;
-int rg_triggered;                           // Count of the number of Hall triggers
-unsigned int rg_totalTrigs;                 // Just for fun - number of triggerings since boot.
+int rg_triggered;                                // Count of the number of Hall triggers
+unsigned int rg_totalTrigs;                      // Just for fun - number of triggerings since boot.
+float rg_trigsPerMinute = 0.0;
+float rg_fiveMinuteAverage = 0.0 ;               // should be obvious what is going on
+int rg_fiveMinuteSamples[5] = {0,0,0,0,0} ;      // roughly one poll every minute
 #endif
 
 const long utcOffsetInSeconds = 36000;       // Sydney is 10 hours ahead
