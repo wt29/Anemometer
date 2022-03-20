@@ -1,5 +1,5 @@
 /* 
-Anemometer
+Anemometer, rain Sensor and WindVane
 
 A headless - no display - sketch to count hall effect pulses and sent the rate up to emoncms for logging
 
@@ -96,13 +96,24 @@ unsigned long timeOfLargestGust;         // how long ago the gust ran
 
 float elapsedMinutes = 0;               // How much "minutes" have passed
 
-float revsPerMinute = 0;                // there are 2 transitions per magnet per rev
+float revsPerMinute = 0;                      // there are 2 transitions per magnet per rev
 float fiveMinuteAverage = 0.0 ;               // should be obvious what is going on
 int fiveMinuteSamples[5] = {0,0,0,0,0} ;      // roughly one poll every minute
 
   
 const int hallPin = D2;
 volatile bool ledState = LOW;
+
+#ifdef WINDVANE
+const int windVanePin = A0;     // An analog pin
+int readVane;                   // Analog read value
+int vaneOutput = 0;             // is in degrees in the final bit
+String vaneDirection = "XX";       // Undefined at start
+int vaneMaxValue = 1024;        // the Analog value for full rotation
+int offsetAngle = 0;            // Offset from north + if > 0 and less than 180
+                                //                   - if > 180 and less than 360
+                                //  i.e. if your vane support rod is West then -90 is the right offest
+#endif
 
 #ifdef RAINGAUGE
 const int rainGaugePin = D6;
@@ -113,7 +124,7 @@ float rg_fiveMinuteAverage = 0.0 ;               // should be obvious what is go
 int rg_fiveMinuteSamples[5] = {0,0,0,0,0} ;      // roughly one poll every minute
 #endif
 
-const long utcOffsetInSeconds = 36000;       // Sydney is 10 hours ahead
+const long utcOffsetInSeconds = 36000;       // Sydney is 10 hours ahead - you will have to readjust
 char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 
 // Define NTP Client to get time
@@ -130,11 +141,14 @@ void setup()
   Serial.begin(115200);     // baud rate
   delay(1) ;                // allow the serial to init
   Serial.println();         // clean up a little
-
-  pinMode( LED_BUILTIN, OUTPUT);
+  pinMode( LED_BUILTIN, OUTPUT );
   pinMode( hallPin, INPUT);
   attachInterrupt(digitalPinToInterrupt(hallPin), hall_ISR, HIGH);
 
+#ifdef WINDVANE
+  pinMode( windVanePin, INPUT_PULLUP );
+  
+#endif
 #ifdef RAINGAUGE
   pinMode( rainGaugePin, INPUT_PULLUP );
   attachInterrupt(digitalPinToInterrupt(rainGaugePin), rainGauge_ISR, HIGH);
@@ -182,6 +196,36 @@ void loop() {
   elapsedMinutes = (millis()-lastRun)/1000/60;  // How much "minutes" have passed - this isn't totally accurate but sufficient for this purpose
   revsPerMinute = triggered/2/elapsedMinutes;   // there is 1 transition per magnet (2 of) per rev
   
+#ifdef WINDVANE
+  
+  readVane = analogRead( windVanePin ) + offsetAngle;
+
+  if (readVane >= 960 & readVane < 64 ){       // North
+   vaneOutput = 0;
+   vaneDirection = "North"; }
+  else if (readVane >=64 & readVane < 192){    // NE
+   vaneOutput = 45;
+   vaneDirection = "North East";}
+  else if (readVane >=192 & readVane < 320){   // E
+   vaneOutput = 90;
+   vaneDirection = "East";}
+  else if (readVane >=320 & readVane < 448){   // SE
+   vaneOutput = 135;
+   vaneDirection = "South East";}
+  else if (readVane >=448 & readVane < 576){   // S
+   vaneOutput = 180;
+   vaneDirection = "South";}
+  else if (readVane >=576 & readVane < 704){   // SW
+   vaneOutput = 225;
+   vaneDirection = "South West";}
+  else if (readVane >=704 & readVane < 832){   // W
+   vaneOutput = 270;
+   vaneDirection = "West";}
+  else {               // (readVane >=832 & readVane < 960)   
+   vaneOutput = 315; 
+   vaneDirection = "North West";}                      // NW
+ 
+#endif
   rg_trigsPerMinute = rg_triggered/elapsedMinutes;   // How many triggers of the rg/minute
   
   lastRun = millis();                           // don't want to add Wifi Connection latency to the poll
@@ -249,6 +293,10 @@ void loop() {
            request += fiveMinuteAverage;        // attempt to smooth the graph
            request += ",\"raingauge\":";
            request += rg_fiveMinuteAverage;     // attempt to smooth the graph
+#ifdef WINDVANE
+           request += ",\"windvane\":";
+           request += vaneOutput;                // time on this isn't critical
+#endif           
            request += "}&apikey=";
            request += APIKEY; 
 
@@ -320,7 +368,9 @@ void handleRoot() {
          response += "<tr><td>Total Polls/minutes </td><td><b>" + String(numberOfPolls) + "</b></td></tr>";
 
          response += "<tr><td>Rain Gauge 5 minute triggers </td><td><b>" + String(rg_fiveMinuteAverage) + "</b></td></tr>";
-         
+#ifdef WINDVANE
+         response += "<tr><td>Current Wind direction </td><td><b>" + vaneDirection + "</b></td></tr>";
+#endif         
          int runSecs = timeClient.getEpochTime() - startAbsoluteTime;
          int upDays = abs( runSecs / 86400 );
          int upHours = abs( runSecs - ( upDays * 86400 ) ) / 3600;
