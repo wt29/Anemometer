@@ -99,7 +99,6 @@ float elapsedMinutes = 0;               // How much "minutes" have passed
 float revsPerMinute = 0;                      // there are 2 transitions per magnet per rev
 float fiveMinuteAverage = 0.0 ;               // should be obvious what is going on
 int fiveMinuteSamples[5] = {0,0,0,0,0} ;      // roughly one poll every minute
-
   
 const int hallPin = D2;
 volatile bool ledState = LOW;
@@ -108,11 +107,11 @@ volatile bool ledState = LOW;
 const int windVanePin = A0;     // An analog pin
 int readVane;                   // Analog read value
 int vaneOutput = 0;             // is in degrees in the final bit
-String vaneDirection = "XX";       // Undefined at start
+String vaneDirection = "XX";    // Undefined at start
 int vaneMaxValue = 1024;        // the Analog value for full rotation
-int offsetAngle = 0;            // Offset from north + if > 0 and less than 180
-                                //                   - if > 180 and less than 360
-                                //  i.e. if your vane support rod is West then -90 is the right offest
+int offsetAngle = 0;            // Offset from north - if > 0 and less than 180
+                                //                   + if > 180 and less than 360
+                                //  i.e. if your vane support rod is West then +90 is the offest
 #endif
 
 #ifdef RAINGAUGE
@@ -223,7 +222,7 @@ void loop() {
    vaneDirection = "West";}
   else {               // (readVane >=832 & readVane < 960)   
    vaneOutput = 315; 
-   vaneDirection = "North West";}                      // NW
+   vaneDirection = "North West";}               // NW
  
 #endif
   rg_trigsPerMinute = rg_triggered/elapsedMinutes;   // How many triggers of the rg/minute
