@@ -1,7 +1,13 @@
 /*
   Anemometer, rain Sensor and WindVane
 
-  A headless - no display - sketch to count hall effect pulses and sent the rate up to emoncms for logging
+  A headless - no display - sketch to interface (optionally)
+
+  > Anemometer
+  > raingauge
+  > wind direction indicator
+  
+  For the Anemometer is counts hall effect pulses and send the rate up to emoncms for logging.
 
   Featuring the LOLIN D1 Mini - ESP8266
   https://lolin.aliexpress.com/store
@@ -15,6 +21,10 @@
 
   -------------------------------------
   // template for data.h
+
+  #define ANEMOMETER                                  // you may or may not have this installed
+  #define RAINGAUGE                                   // Experimental support for Hydreon RG-11 Rain gauge
+  #define WINDVANE                                    // Installed?
 
   //** Node and Network Setup
 
@@ -30,8 +40,7 @@
   #define CALIBRATION                                 // Future - a multiplier to convert RPM into whatever you are going to log - Knots, M/s, MPH etc
   #define TARGETUNITS  "M/s"                          // Future - once calibration is done, what will we be using as a unit.
 
-  #define RAINGAUGE                                   // Experimental support for Hydreon RG-11 Rain gauge
-
+  
   If required, enable the following block to your data.h to set fixed IP addresses
 
   #define STATIC_IP
@@ -112,9 +121,9 @@ int readVane;                   // Analog read value
 int vaneOutput = 0;             // is in degrees in the final bit
 String vaneDirection = "XX";    // Undefined at start
 int vaneMaxValue = 1024;        // the Analog value for full rotation
-int offsetAngle = 0;            // Offset from north - if > 0 and less than 180
-//                   + if > 180 and less than 360
-//  i.e. if your vane support rod is West then +90 is the offest
+int offsetAngle = 90;           // Offset from north - if > 0 and less than 180
+                                //  + if > 180 and less than 360
+                                //  i.e. if your vane support rod is West then +90 is the offest
 #endif
 
 #ifdef RAINGAUGE
@@ -410,7 +419,8 @@ void handleRoot() {
 #endif
 #ifdef WINDVANE
   response += "<tr><td>Current Wind direction </td><td><b>" + vaneDirection + "</b></td></tr>";
-//  response += "<tr><td>ADC value </td><td><b>" + String( analogRead(A0) ) + "</b></td></tr>";
+  response += "<tr><td>Vane read </td><td><b>" + String( analogRead(A0) ) + "</b></td></tr>";
+  response += "<tr><td>Offset </td><td><b>" + String( offsetAngle ) + "</b></td></tr>";
 #endif
   int runSecs = timeClient.getEpochTime() - startAbsoluteTime;
   int upDays = abs( runSecs / 86400 );
