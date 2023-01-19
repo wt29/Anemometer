@@ -59,6 +59,9 @@
 
 #warning Setup your data.h.  Refer to template in code.
 
+#include <EEPROM.h>          // Going to save some Max/Min stuff
+#define EEPROM_SIZE 32        // 4 bytes each for largestGust, timeofLargestGust
+
 //Node and Network Setup
 #include <ESP8266WiFi.h>
 #include <ESP8266WiFiMulti.h>   // Include the Wi-Fi-Multi library
@@ -157,6 +160,16 @@ void setup()
   millisDelay(1) ;          // allow the serial to init
   Serial.println();         // clean up a little
 
+  EEPROM.begin(32);                 // this number in "begin()" is ESP8266. EEPROM is emulated so you need buffer to emulate.
+  EEPROM.get(0,largestGust);            // Should read 4 bytes for each of these thangs
+  if ( isnan( largestGust ) ) { largestGust = 0; }  // Having issues during devel with "nan" (not a number) being written to EEPROM
+  EEPROM.get(4,timeOfLargestGust);
+  if (largestGust > 20000) {            // Hurricane Strength - sometimes first value is stupid
+   largestGust = 0;
+   EEPROM.put( 0, largestGust );
+   EEPROM.commit();
+  }
+
 #ifdef ANEMOMETER
   pinMode( an_hallPin, INPUT);
   attachInterrupt(digitalPinToInterrupt( an_hallPin ), hall_ISR, HIGH);
@@ -230,6 +243,10 @@ void loop() {
     if (gustSpeed > largestGust) {
       largestGust = gustSpeed;
       timeOfLargestGust = timeClient.getEpochTime();
+      EEPROM.put( 0, largestGust );
+      EEPROM.put( 4, timeOfLargestGust );
+      EEPROM.commit();
+
     }
     Serial.print( "AN Triggers : " );
     Serial.println( an_triggered );
