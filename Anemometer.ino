@@ -19,7 +19,7 @@
 
   Also add that file.h or *.h to the .gitignore so you dont upload your wifi password to github!
 
-  -------------------------------------
+   -------------------------------------
   // template for data.h
 
   #define ANEMOMETER                                  // you may or may not have this installed
@@ -52,14 +52,15 @@
   -------------------------------------
 
 */
-#define VERSION 1.04            // Calibration values, reboot remote
+#define VERSION 1.05            // EEPROM save of Max wind speed.
+                                // 1.04 Calibration values, reboot remote
 // Time Client, uptimes
 // AP Arrays, 5 minute averages
 // 1.00 Initial version
 
-#warning Setup your data.h.  Refer to template in code.
+#warning Setup your data.h.  Refer to template in the comments
 
-#include <EEPROM.h>          // Going to save some Max/Min stuff
+#include <EEPROM.h>           // Going to save some Max/Min stuff
 #define EEPROM_SIZE 32        // 4 bytes each for largestGust, timeofLargestGust
 
 //Node and Network Setup
@@ -73,14 +74,15 @@
 #include <WiFiUdp.h>
 
 // Needed to move this here as the IPAddress types aren't declared until the WiFi libs are loaded
-#include "data.h"             // Create this file from template above.  
 // This means we dont keep uploading API key+password to GitHub. (data.h should be ignored in repository)
+
+#include "data.h"             // Create this file from template above.  
 
 const char* nodeName = NODENAME;
 const char* host = HOST;
 const char* APIKEY = MYAPIKEY;
-char* passwords[] = PASSARRAY;
-char* accessPoints[] = APARRAY;
+const char* passwords[] = PASSARRAY;
+const char* accessPoints[] = APARRAY;
 const int gustPercent = GUSTPERCENT;
 
 ESP8266WiFiMulti wifiMulti;     // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
@@ -409,7 +411,7 @@ void handleRoot() {
   Serial.println( url );
   String response =  "<h2>You have reached the Anemometer</h2>";
   response += "<b>This device polls at approximately 1 minute intervals.</b>";
-  response += "<p></p><table style=\"\width:600\"\>";
+  response += "<p></p><table style=\"width:600\">";
 #ifndef WINDVANE   // If we aren't using the ADC then why not do the voltage thing
   response += "<tr><td>VCC </td><td><b>" + String( ESP.getVcc() / 1000.00 ) + "</b></td></tr>";
 #endif
@@ -428,8 +430,8 @@ void handleRoot() {
   response += "<tr><td>Calculated Wind Speed (5 minute Avg) is </td><td><b>" + String(an_fiveMinuteAverage / CALIBRATION) + String(TARGETUNITS) + "</b></td></tr>";
   response += "<tr><td>Total trigs since boot </td><td><b>" + String(an_totalTrigs) + "</b></td></tr>";
 
-  response += "<tr><td>Largest gust RPM detected </td><td><b>" + String(largestGust) + "</b> at <b>" + fullDate( timeOfLargestGust ) + "</b></td></tr>";
-  response += "<tr><td>Total Polls/minutes </td><td><b>" + String(numberOfPolls) + "</b></td></tr>";
+  response += "<tr><td>Largest gust RPM detected </td><td><b>" + String(largestGust) + "</b> on <b>" + fullDate( timeOfLargestGust ) + "</b></td></tr>";
+  response += "<tr><td>Total Polls (or minutes) </td><td><b>" + String(numberOfPolls) + "</b></td></tr>";
 #endif
 #ifdef RAINGAUGE
   response += "<tr><td>Rain Gauge 5 minute triggers </td><td><b>" + String(rg_fiveMinuteAverage) + "</b></td></tr>";
