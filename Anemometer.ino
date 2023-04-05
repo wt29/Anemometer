@@ -548,7 +548,7 @@ void rebootDevice() {
 }
 
 #ifdef ANEMOMETER
-ICACHE_RAM_ATTR void anemometer_ISR()
+IRAM_ATTR void anemometer_ISR()
 {
   an_triggered += 1;
   an_totalTrigs += 1;
@@ -556,7 +556,7 @@ ICACHE_RAM_ATTR void anemometer_ISR()
 #endif
 
 #ifdef RAINSENSOR
-ICACHE_RAM_ATTR void rainSensor_ISR()
+IRAM_ATTR void rainSensor_ISR()
 {
   rs_triggered += 1;
   rs_totalTrigs += 1;
@@ -564,7 +564,7 @@ ICACHE_RAM_ATTR void rainSensor_ISR()
 #endif
 
 #ifdef RAINGAUGE
-ICACHE_RAM_ATTR void rainGauge_ISR()
+IRAM_ATTR void rainGauge_ISR()
 {
   rg_triggered += 1;
   rg_totalTrigs += 1;
@@ -580,13 +580,10 @@ String getInternetTime() {
 String fullDate ( unsigned long epoch ) {
   static unsigned char month_days[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
   static unsigned char week_days[7] = {4, 5, 6, 0, 1, 2, 3}; //Thu=4, Fri=5, Sat=6, Sun=0, Mon=1, Tue=2, Wed=3
-  unsigned char ntp_hour, ntp_minute, ntp_second, ntp_week_day, ntp_date, ntp_month, leap_days ;
+  unsigned char ntp_hour, ntp_minute, ntp_second, ntp_week_day, ntp_date, ntp_month, leap_days=0 ;
   String dow, sMonth;
   unsigned short temp_days;
-  unsigned int ntp_year, days_since_epoch, day_of_year, leap_year_ind;
-
-  leap_days = 0;
-  leap_year_ind = 0;
+  unsigned int ntp_year, days_since_epoch, day_of_year;
 
   ntp_second = epoch % 60;
   epoch /= 60;
@@ -611,7 +608,7 @@ String fullDate ( unsigned long epoch ) {
   if (((ntp_year % 4 == 0) && (ntp_year % 100 != 0)) || (ntp_year % 400 == 0))
   {
     month_days[1] = 29;   //February = 29 days for leap years
-    leap_year_ind = 1;    //if current year is leap, set indicator to 1
+//    leap_year_ind = 1;    //if current year is leap, set indicator to 1
   }
   else month_days[1] = 28; //February = 28 days for non-leap years
 
