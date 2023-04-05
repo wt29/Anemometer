@@ -3,9 +3,10 @@
 
   A headless - no display - sketch to interface (optionally)
 
-  > Anemometer
-  > raingauge
-  > wind direction indicator
+  > Anemometer  - uses a hall effect sensor to count rotations
+  > Rain Gauge  - uses a tipping bucket and hall effect to count rain "buckets"
+  > Rain Sensor - uses a Hydreon RG-15 rain sensor. Note - this is a 12V device and will require s "buck" board to produce 5V for the Wemos D1 
+  > Wind Direction Indicator - uses a 360 degree variable resistor.
   
   For the Anemometer is counts hall effect pulses and send the rate up to emoncms for logging.
 
@@ -22,16 +23,25 @@
    -------------------------------------
   // template for data.h
 
-  #define ANEMOMETER                                  // you may or may not have this installed
-  #define RAINGAUGE                                   // Experimental support for Hydreon RG-11 Rain gauge
-  #define WINDVANE                                    // Installed?
-
-  //** Node and Network Setup
+  #define ANEMOMETER                                  // you may or may not any of these installed
+  #define RAINSENSOR                                  // Experimental support for Hydreon RG-11 Rain gauge
+  
+  #define WINDVANE                                    // Installed / configured
+  // Use the "VaneCalibrate.ino" Sketch to get these values. 
+  // Different VRs and bias resistors will give you different values to these. 
+  // Your support rod will almost certainly be pointed at a different orientation to mine
+  #define WV_ANALOG_MAX 557
+  #define WV_ANALOG_MIN 19
+  #define WV_ROD_OFFSET 70     // actually a combination to the zero on the VR and the actual orientation  
+  
+  #define RAINGAUGE                                   // Installed / connected?
+  
+  // Node and Network Setup
 
   #define NODENAME "<Your NodeName>";                 // eg "Kitchen"  Required and UNIQUE per site.  Also used to find mdns eg NODENAME.local
 
-  #define APARRAY {<"ap1">,<"ap2">,<"ap3">,<"ap....">}   // An array of possible Access points - usually just 1!
-  #define PASSARRAY {<"password1">,<"password2">,<"password3">,<"password...">}  // Array of paswords matching you APs
+  #define APARRAY {<"ap1">,<"ap2">,<"ap....">}        // An array of possible Access points - usually just 1!
+  #define PASSARRAY {<"password1">,<"password2">,<"password...">}  // Array of paswords matching you APs
   #define APCOUNT 4  // How many you have defined
 
   #define HOST "<Your emoncms host fqdn>";            // eg  "emoncms.org" Required for logging. Note:just the host not the protocol
@@ -39,7 +49,6 @@
   #define GUSTPERCENT                                 // How many RPM above the 5 minute average defines a "gust"
   #define CALIBRATION                                 // Future - a multiplier to convert RPM into whatever you are going to log - Knots, M/s, MPH etc
   #define TARGETUNITS  "M/s"                          // Future - once calibration is done, what will we be using as a unit.
-
   
   If required, enable the following block to your data.h to set fixed IP addresses
 
@@ -58,12 +67,13 @@
 // AP Arrays, 5 minute averages
 // 1.00 Initial version
 
-#warning Setup your data.h.  Refer to template in the comments
+#warning Setup your data.h.  Refer to template in the comments for the sketch
 
 #include <EEPROM.h>           // Going to save some Max/Min stuff
 #define EEPROM_SIZE 32        // 4 bytes each for largestGust, timeofLargestGust
 
 //Node and Network Setup
+
 #include <ESP8266WiFi.h>
 #include <ESP8266WiFiMulti.h>   // Include the Wi-Fi-Multi library
 #include <WiFiClient.h>
@@ -86,27 +96,25 @@ const char* accessPoints[] = APARRAY;
 const int gustPercent = GUSTPERCENT;
 
 ESP8266WiFiMulti wifiMulti;     // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
-WiFiClient client;              // Instance of WiFi Client
 ESP8266WebServer server(80);    // Create a webserver object that listens for HTTP request on port 80
+WiFiClient client;              // Instance of WiFi Client
 
 void handleRoot();              // function prototypes for HTTP handlers
 void handleNotFound();          // Something it don't understand
 void rebootDevice();            // Kick it over remotely
 
-int waitForWiFi = 20000 ;         // How long to wait for the WiFi to connect - 10 Seconds should be enough
+const uint32_t waitForWiFi = 5000 ;         // How long to wait for the WiFi to connect - 5 Seconds should be enough
 int startWiFi;
 
 int connectMillis = millis();     // this gets reset after every successful data push
 
 int poll = 60000;                       // Poll the sensor every 60 seconds (or so)
-int lastRun = millis() - (poll + 1);    // Force a run on boot. Includes connect to WiFi
+long unsigned int lastRun = millis() - (poll + 1);    // Force a run on boot. Includes connect to WiFi
 float elapsedMinutes = 0;               // How much "minutes" have passed
 unsigned int numberOfPolls;             // Total # of polls since rebooted
 
-
 #ifdef ANEMOMETER
-const int an_hallPin = D2;
-
+const int anemometerPin = D2;
 unsigned int an_triggered = 1;                           // Count of the number of Hall triggers
 unsigned int an_totalTrigs;                 // Just for fun - number of triggerings since boot.
 unsigned int gustSpeed = 0;                          // define gusts as + 20%
@@ -116,8 +124,8 @@ unsigned long timeOfLargestGust;            // how long ago the gust ran
 float an_RPM = 0;                      // there are 2 transitions per magnet per rev
 float an_fiveMinuteAverage = 0.0 ;               // should be obvious what is going on
 int an_fiveMinuteSamples[5] = {0, 0, 0, 0, 0} ;  // roughly one poll every minute
-
 #endif
+
 volatile bool ledState = LOW;
 
 #ifdef WINDVANE
@@ -125,19 +133,30 @@ int windVanePin = A0;           // An analog pin
 int readVane;                   // Analog read value
 int vaneOutput = 0;             // is in degrees in the final bit
 String vaneDirection = "XX";    // Undefined at start
-int vaneMaxValue = 1024;        // the Analog value for full rotation
-int offsetAngle = 90;           // Offset from north - if > 0 and less than 180
+
+// Use the "VaneCalibrate.ino" Sketch to get these values
+
+float wvPerDegree = ( ( WV_ANALOG_MAX - WV_ANALOG_MIN) / 360.0 );  
                                 //  + if > 180 and less than 360
                                 //  i.e. if your vane support rod is West then +90 is the offest
 #endif
 
+#ifdef RAINSENSOR
+int rainSensorPin = D6;
+int rs_triggered;                                // Count of the number of Hall triggers
+unsigned int rs_totalTrigs;                      // Just for fun - number of triggerings since boot.
+float rs_trigsPerMinute = 0.0;
+float rs_fiveMinuteAverage = 0.0 ;               // should be obvious what is going on
+int rs_fiveMinuteSamples[5] = {0, 0, 0, 0, 0} ;  // roughly one poll every minute
+#endif
+
 #ifdef RAINGAUGE
-int rainGaugePin = D6;
+int rainGaugePin = D5;
 int rg_triggered;                                // Count of the number of Hall triggers
 unsigned int rg_totalTrigs;                      // Just for fun - number of triggerings since boot.
-float rg_trigsPerMinute = 0.0;
+float rg_trigsPerMinute = 0.0;                   // we have a rough 1 minute poll / upload.
 float rg_fiveMinuteAverage = 0.0 ;               // should be obvious what is going on
-int rg_fiveMinuteSamples[5] = {0, 0, 0, 0, 0} ;  // roughly one poll every minute
+int rg_fiveMinuteSamples[5] = {0, 0, 0, 0, 0} ;  // roughly one poll every minute  - gives trends
 #endif
 
 const long utcOffsetInSeconds = 36000;       // Sydney is 10 hours ahead - you will have to readjust
@@ -155,13 +174,22 @@ String timeString;
 String startTime;
 unsigned long startAbsoluteTime;    // How long have we been running for?
 
+//-----------------------------------------
 void setup()
 {
   
   Serial.begin(115200);     // baud rate
   millisDelay(1) ;          // allow the serial to init
   Serial.println();         // clean up a little
+  
+  for (int i = 0; i < APCOUNT; i++) {
+    wifiMulti.addAP( accessPoints[i], passwords[i] );     // Add all the APs and passwords from the arrays
+  }
 
+  WiFi.mode(WIFI_STA);  // Station Mode
+  connectWiFi();        // This thing isn't any use without WiFi
+
+#ifdef ANEMOMETER  
   EEPROM.begin(32);                 // this number in "begin()" is ESP8266. EEPROM is emulated so you need buffer to emulate.
   EEPROM.get(0,largestGust);            // Should read 4 bytes for each of these thangs
   if ( isnan( largestGust ) ) { largestGust = 0; }  // Having issues during devel with "nan" (not a number) being written to EEPROM
@@ -171,24 +199,28 @@ void setup()
    EEPROM.put( 0, largestGust );
    EEPROM.commit();
   }
+#endif
+
+  pinMode( LED_BUILTIN, OUTPUT );
 
 #ifdef ANEMOMETER
-  pinMode( an_hallPin, INPUT);
-  attachInterrupt(digitalPinToInterrupt( an_hallPin ), hall_ISR, HIGH);
+  pinMode( anemometerPin, INPUT);
+  attachInterrupt(digitalPinToInterrupt(anemometerPin), anemometer_ISR, HIGH);
+#endif
+
+#ifdef RAINSENSOR
+  pinMode( rainSensorPin, INPUT_PULLUP );
+  attachInterrupt(digitalPinToInterrupt(rainSensorPin), rainSensor_ISR, HIGH);
 #endif
 
 #ifdef RAINGAUGE
   pinMode( rainGaugePin, INPUT_PULLUP );
   attachInterrupt(digitalPinToInterrupt(rainGaugePin), rainGauge_ISR, HIGH);
 #endif
-  pinMode( LED_BUILTIN, OUTPUT );
 
-  for (int i = 0; i <= APCOUNT; i++) {
-    wifiMulti.addAP( accessPoints[i], passwords[i] );     // Add all the APs and passwords from the arrays
-  }
-
-  connectWiFi();        // This thing isn't any use without WiFi
-
+//  delay( 5000 );
+//  Serial.println( "debug");
+/*
   if (MDNS.begin( nodeName )) {              // Start the mDNS responder for <nodeName>.local
     Serial.println("mDNS responder started");
   }
@@ -196,7 +228,7 @@ void setup()
   {
     Serial.println("Error setting up MDNS responder!");
   }
-
+*/
   server.on("/", handleRoot);               // Call the 'handleRoot' function when a client requests URI "/"
   server.onNotFound(handleNotFound);        // When a client requests an unknown URI (i.e. something other than "/"), call function "handleNotFound"
   server.on("/reboot", rebootDevice);       // Kick over remotely
@@ -213,6 +245,8 @@ void setup()
 
 }       // Setup
 
+//------------------------------------------------------
+
 void loop() {
 
   server.handleClient();                         // Listen for HTTP requests from clients
@@ -221,7 +255,6 @@ void loop() {
   digitalWrite(LED_BUILTIN, ledState);           // only useful for demo. If running on battery, this should be commented out
 #endif
   if ( millis() > lastRun + 60000 ) {             // only want this happening every minute (or so) 
-//    elapsedMinutes = ( millis() - lastRun) / 1000 / 60; // How much "minutes" (regardless of Poll) have passed - this isn't totally accurate but sufficient for this purpose
     lastRun = millis();                           // don't want to add Wifi Connection latency to the poll
     numberOfPolls += 1;                           // Another poll recorded
 
@@ -259,37 +292,40 @@ void loop() {
 
 #endif
 #ifdef WINDVANE
-    readVane = analogRead(A0) + offsetAngle;
+    readVane = analogRead(A0);
 
     Serial.println();
     Serial.print("Vane : ");
     Serial.println( readVane );
-
-    if (readVane >= 960 & readVane < 64 ) {      // North
+    readVane -= WV_ANALOG_MIN;       // delete the offset value of the VR
+    readVane = (readVane/wvPerDegree) + WV_ROD_OFFSET;  // Calculate the offset and figure out the true compass
+    if (readVane > 360 ) {readVane -= 360;}
+ 
+    if ((readVane >= 338) & (readVane < 22) ) {      // North
       vaneOutput = 0;
       vaneDirection = "North";
     }
-    else if (readVane >= 64 & readVane < 192) {  // NE
+    else if ((readVane >= 23) & (readVane < 68)) {  // NE
       vaneOutput = 45;
       vaneDirection = "North East";
     }
-    else if (readVane >= 192 & readVane < 320) { // E
+    else if ((readVane >= 68) & (readVane < 112)) { // E
       vaneOutput = 90;
       vaneDirection = "East";
     }
-    else if (readVane >= 320 & readVane < 448) { // SE
+    else if ((readVane >= 112) & (readVane < 157)) { // SE
       vaneOutput = 135;
       vaneDirection = "South East";
     }
-    else if (readVane >= 448 & readVane < 576) { // S
+    else if ((readVane >= 157) & (readVane < 202 )) { // S
       vaneOutput = 180;
       vaneDirection = "South";
     }
-    else if (readVane >= 576 & readVane < 704) { // SW
+    else if ((readVane >= 202) & (readVane < 247)) { // SW
       vaneOutput = 225;
       vaneDirection = "South West";
     }
-    else if (readVane >= 704 & readVane < 832) { // W
+    else if ((readVane >= 247) & (readVane < 292)) { // W
       vaneOutput = 270;
       vaneDirection = "West";
     }
@@ -297,6 +333,21 @@ void loop() {
       vaneOutput = 315;
       vaneDirection = "North West";
     }               // NW
+
+#endif
+#ifdef RAINSENSOR
+    rs_trigsPerMinute = rs_triggered; // How many triggers of the rg/minute
+
+    rs_triggered = 0;                                // Still gunna be counting in the background
+    rs_fiveMinuteAverage = 0.0;                      // Calculate the latest 5 minute average
+
+    for (int i = 3; i >= 0; i--) {                 // Only pushing 4 samples along here
+      rs_fiveMinuteSamples[i + 1] = rs_fiveMinuteSamples[i];
+      rs_fiveMinuteAverage += ( rs_fiveMinuteSamples[i + 1] / 5 );
+
+    }
+    rs_fiveMinuteSamples[0] = rs_trigsPerMinute;
+    rs_fiveMinuteAverage += ( rs_trigsPerMinute / 5 );
 
 #endif
 #ifdef RAINGAUGE
@@ -333,8 +384,8 @@ void loop() {
     }
     else
     {
-      Serial.printf("\n[Connecting to %s ... ", host, "\n");
-
+      Serial.println("Connecting to ");
+      Serial.print( host );
       if (client.connect(host, 80))     {
         Serial.println("Connected]");
         Serial.println("[Sending a request]");
@@ -346,9 +397,17 @@ void loop() {
         request += "&fulljson={\"anemometer\":";
         request += an_fiveMinuteAverage;        // attempt to smooth the graph
 #endif
+#ifdef RAINSENSOR
+        request += ",\"rainSensorTriggers\":";
+        request += rs_trigsPerMinute;           // absolute number of triggers
+        request += ",\"rainSensor5MinAvg\":";
+        request += rs_fiveMinuteAverage;        // average rate over 5 minutes
+#endif
 #ifdef RAINGAUGE
-        request += ",\"raingauge\":";
-        request += rg_fiveMinuteAverage;     // attempt to smooth the graph
+        request += ",\"rainGaugeCount\":";
+        request += rg_trigsPerMinute;           // absolute value of rain in last minute
+        request += ",\"rainGauge5MinAvg\":";
+        request += rg_fiveMinuteAverage;        // average rate over 5 minutes
 #endif
 #ifdef WINDVANE
         request += ",\"windvane\":";
@@ -381,13 +440,30 @@ void loop() {
 }       // Loop
 
 void connectWiFi() {
+  // Serial.println( nodeName );
 
-#ifdef STATIC_IP
+#ifdef BASIC_WIFI
+ WiFi.begin("LivingRoom", "BigFurryCat");
+
+ Serial.print("Connecting");
+ while (WiFi.status() != WL_CONNECTED)
+ {
+   delay(500);
+   Serial.print(".");
+ }
+  Serial.println();
+  Serial.print("Connected, IP address: ");
+  Serial.println(WiFi.localIP());
+
+#else
+ #ifdef STATIC_IP
   WiFi.config( staticIP, gateway, subnet, dns1 );
-#endif
+  WiFi.begin("HackDesk", "BigFurryCat");
+ #else 
   WiFi.hostname( nodeName );     // This will show up in your DHCP server
-  while (wifiMulti.run() != WL_CONNECTED) {
 
+   if (wifiMulti.run(waitForWiFi) == WL_CONNECTED) {
+    
     startWiFi = millis() ;        // When we started waiting
 
     while ((WiFi.status() != WL_CONNECTED) && ( (millis() - startWiFi) < waitForWiFi ))
@@ -396,13 +472,12 @@ void connectWiFi() {
       Serial.print(".");
     }
   }
-
-  if (WiFi.status() == WL_CONNECTED) {
+  #endif
+#endif
     Serial.println("");
     Serial.print("IP Address: ");
     Serial.println( WiFi.localIP());
     Serial.printf("Connection status: %d\n", WiFi.status());
-  }
 
 }
 
@@ -433,13 +508,18 @@ void handleRoot() {
   response += "<tr><td>Largest gust RPM detected </td><td><b>" + String(largestGust) + "</b> on <b>" + fullDate( timeOfLargestGust ) + "</b></td></tr>";
   response += "<tr><td>Total Polls (or minutes) </td><td><b>" + String(numberOfPolls) + "</b></td></tr>";
 #endif
+#ifdef RAINSENSOR
+  response += "<tr><td>Rain Sensor 5 minute triggers </td><td><b>" + String(rs_fiveMinuteAverage) + "</b></td></tr>";
+  response += "<tr><td>Rain Sensor total triggers </td><td><b>" + String(rs_totalTrigs) + "</b></td></tr>";
+#endif
 #ifdef RAINGAUGE
   response += "<tr><td>Rain Gauge 5 minute triggers </td><td><b>" + String(rg_fiveMinuteAverage) + "</b></td></tr>";
+  response += "<tr><td>Rain Gauge total triggers </td><td><b>" + String(rg_totalTrigs) + "</b></td></tr>";
 #endif
 #ifdef WINDVANE
-  response += "<tr><td>Current Wind direction </td><td><b>" + vaneDirection + "</b></td></tr>";
-  response += "<tr><td>Vane read </td><td><b>" + String( analogRead(A0) ) + "</b></td></tr>";
-  response += "<tr><td>Offset </td><td><b>" + String( offsetAngle ) + "</b></td></tr>";
+ response += "<tr><td>Current Wind direction </td><td><b>" + vaneDirection + "</b></td></tr>";
+  response += "<tr><td>Vane read </td><td><b>" + String( readVane ) ) + "</b></td></tr>";
+  response += "<tr><td>Offset </td><td><b>" + String( WV_ROD_OFFSET ) + "</b></td></tr>";
 #endif
   int runSecs = timeClient.getEpochTime() - startAbsoluteTime;
   int upDays = abs( runSecs / 86400 );
@@ -464,29 +544,33 @@ void handleNotFound() {
 }
 
 void rebootDevice() {
+  Serial.println( "In reboot Device" );
   server.send(200, "text/html", "<h1>Rebooting " + String(nodeName) + " in 5 seconds</h1>"); // Warn em
   millisDelay( 5000 );
   ESP.restart();
 }
 
 #ifdef ANEMOMETER
-ICACHE_RAM_ATTR void hall_ISR()
+ICACHE_RAM_ATTR void anemometer_ISR()
 {
   an_triggered += 1;
   an_totalTrigs += 1;
-#ifdef DEBUG
-  ledState = !ledState;
-#endif  
 }
 #endif
+
+#ifdef RAINSENSOR
+ICACHE_RAM_ATTR void rainSensor_ISR()
+{
+  rs_triggered += 1;
+  rs_totalTrigs += 1;
+}
+#endif
+
 #ifdef RAINGAUGE
 ICACHE_RAM_ATTR void rainGauge_ISR()
 {
   rg_triggered += 1;
   rg_totalTrigs += 1;
-#ifdef DEBUG  
-  ledState = !ledState;
-#endif  
 }
 #endif
 
@@ -499,10 +583,10 @@ String getInternetTime() {
 String fullDate ( unsigned long epoch ) {
   static unsigned char month_days[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
   static unsigned char week_days[7] = {4, 5, 6, 0, 1, 2, 3}; //Thu=4, Fri=5, Sat=6, Sun=0, Mon=1, Tue=2, Wed=3
-  unsigned char ntp_hour, ntp_minute, ntp_second, ntp_week_day, ntp_date, ntp_month, leap_days, leap_year_ind ;
+  unsigned char ntp_hour, ntp_minute, ntp_second, ntp_week_day, ntp_date, ntp_month, leap_days ;
   String dow, sMonth;
   unsigned short temp_days;
-  unsigned int ntp_year, days_since_epoch, day_of_year;
+  unsigned int ntp_year, days_since_epoch, day_of_year, leap_year_ind;
 
   leap_days = 0;
   leap_year_ind = 0;
@@ -519,7 +603,7 @@ String fullDate ( unsigned long epoch ) {
 
   ntp_year = 1970 + (days_since_epoch / 365); // ball parking year, may not be accurate!
 
-  int i;
+  unsigned int i;
   for (i = 1972; i < ntp_year; i += 4) // Calculating number of leap days since epoch/1970
     if (((i % 4 == 0) && (i % 100 != 0)) || (i % 400 == 0)) leap_days++;
 
@@ -592,23 +676,14 @@ String fullDate ( unsigned long epoch ) {
     case 12: sMonth = "December";
     default: break;
   }
-  /*
-    printf(" %2d",ntp_date);
-    printf(", %d\n",ntp_year);
-    printf("TIME = %2d : %2d : %2d\n\n", ntp_hour,ntp_minute,ntp_second)  ;
-    printf("Days since Epoch: %d\n",days_since_epoch);
-    printf("Number of Leap days since EPOCH: %d\n",leap_days);
-    printf("Day of year = %d\n", day_of_year);
-    printf("Is Year Leap? %d\n",leap_year_ind);
-  */
   return String( dow + " " + ntp_date + " " + sMonth + " " + ntp_hour + ":" + ntp_minute + ":" + ntp_second );
 }
 
 
 // Wait around for a bit
-void millisDelay ( int mDelay )
+void millisDelay ( long unsigned int mDelay )
 {
-  int now = millis();
+  long unsigned int now = millis();
   do {
     // Do nothing
   } while ( millis() < now + mDelay);
