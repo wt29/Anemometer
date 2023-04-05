@@ -1,5 +1,11 @@
-# Anemometer
-A Wemos D1 R2 Mini based Anemometer with logging
+# Anemometer - actually 4 different sensors for weather
+A Wemos D1 R2 Mini based Weather Station with logging
+
+Optionally
+* Anemometer
+* Wind Direction / vane
+* Rain Gauge - tipping bucket
+* Hydreon RG-11 rain sensor - 
 
 Complete set of files to print, build and configure an internet connected anemometer.
 
