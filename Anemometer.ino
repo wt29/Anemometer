@@ -218,17 +218,14 @@ void setup()
   attachInterrupt(digitalPinToInterrupt(rainGaugePin), rainGauge_ISR, HIGH);
 #endif
 
-//  delay( 5000 );
-//  Serial.println( "debug");
-/*
-  if (MDNS.begin( nodeName )) {              // Start the mDNS responder for <nodeName>.local
+ if (MDNS.begin( nodeName )) {              // Start the mDNS responder for <nodeName>.local
     Serial.println("mDNS responder started");
   }
   else
   {
     Serial.println("Error setting up MDNS responder!");
   }
-*/
+
   server.on("/", handleRoot);               // Call the 'handleRoot' function when a client requests URI "/"
   server.onNotFound(handleNotFound);        // When a client requests an unknown URI (i.e. something other than "/"), call function "handleNotFound"
   server.on("/reboot", rebootDevice);       // Kick over remotely
@@ -518,7 +515,7 @@ void handleRoot() {
 #endif
 #ifdef WINDVANE
  response += "<tr><td>Current Wind direction </td><td><b>" + vaneDirection + "</b></td></tr>";
-  response += "<tr><td>Vane read </td><td><b>" + String( readVane ) ) + "</b></td></tr>";
+  response += "<tr><td>Vane read </td><td><b>" + String( readVane ) + "</b></td></tr>";
   response += "<tr><td>Offset </td><td><b>" + String( WV_ROD_OFFSET ) + "</b></td></tr>";
 #endif
   int runSecs = timeClient.getEpochTime() - startAbsoluteTime;
