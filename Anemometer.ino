@@ -35,6 +35,12 @@
   #define WV_ROD_OFFSET 70     // actually a combination to the zero on the VR and the actual orientation  
   
   #define RAINGAUGE                                   // Installed / connected?
+  #define RG_MILLILITRES_PER_BUCKET  1.875     // ml per bucket
+  #define RG_BUCKETS_PER_RAIN_ML   6.03
+  // RG funnel is 60mm radius so area is Pi R Squared so 3.1415 * 60 * 60 = 11310 sq mm
+  // 1mm of rain is therefore 11310 cubic mm 
+  // 1 bucket from my calibration ia 1.875 ml which is 1875 cubic millimeters
+  // 1mm of rain is therefore 11310 / 1.875 = 6.031 buckets (rounded )
   
   // Node and Network Setup
 
@@ -67,25 +73,32 @@
 // AP Arrays, 5 minute averages
 // 1.00 Initial version
 
-#warning Setup your data.h.  Refer to template in the comments for the sketch
+// #define C3MINI
 
 #include <EEPROM.h>           // Going to save some Max/Min stuff
 #define EEPROM_SIZE 32        // 4 bytes each for largestGust, timeofLargestGust
 
 //Node and Network Setup
 
-#include <ESP8266WiFi.h>
-#include <ESP8266WiFiMulti.h>   // Include the Wi-Fi-Multi library
+#ifdef C3MINI
+ #include <WiFi.h>
+ #include <WifiMulti.h>
+ #include <ESPmDNS.h>
+ #include <WebServer.h>
+#else
+ #include <ESP8266WiFi.h>
+ #include <ESP8266WiFiMulti.h>   // Include the Wi-Fi-Multi library
+ #include <ESP8266mDNS.h>
+ #include <ESP8266WebServer.h>   // Include the WebServer library
+#endif
+
 #include <WiFiClient.h>
-#include <ESP8266mDNS.h>
-#include <ESP8266WebServer.h>   // Include the WebServer library
 #include <ArduinoOTA.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 
 // Needed to move this here as the IPAddress types aren't declared until the WiFi libs are loaded
 // This means we dont keep uploading API key+password to GitHub. (data.h should be ignored in repository)
-
 #include "data.h"             // Create this file from template above.  
 
 const char* nodeName = NODENAME;
@@ -95,8 +108,13 @@ const char* passwords[] = PASSARRAY;
 const char* accessPoints[] = APARRAY;
 const int gustPercent = GUSTPERCENT;
 
-ESP8266WiFiMulti wifiMulti;     // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
-ESP8266WebServer server(80);    // Create a webserver object that listens for HTTP request on port 80
+#ifdef C3MINI
+ WiFiMulti wifiMulti;
+ WebServer server(80);
+#else
+ ESP8266WiFiMulti wifiMulti;     // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
+ ESP8266WebServer server(80);    // Create a webserver object that listens for HTTP request on port 80
+#endif
 WiFiClient client;              // Instance of WiFi Client
 
 void handleRoot();              // function prototypes for HTTP handlers
@@ -133,7 +151,6 @@ int windVanePin = A0;           // An analog pin
 int readVane;                   // Analog read value
 int vaneOutput = 0;             // is in degrees in the final bit
 String vaneDirection = "XX";    // Undefined at start
-
 // Use the "VaneCalibrate.ino" Sketch to get these values
 
 float wvPerDegree = ( ( WV_ANALOG_MAX - WV_ANALOG_MIN) / 360.0 );  
@@ -157,6 +174,7 @@ unsigned int rg_totalTrigs;                      // Just for fun - number of tri
 float rg_trigsPerMinute = 0.0;                   // we have a rough 1 minute poll / upload.
 float rg_fiveMinuteAverage = 0.0 ;               // should be obvious what is going on
 int rg_fiveMinuteSamples[5] = {0, 0, 0, 0, 0} ;  // roughly one poll every minute  - gives trends
+int rg_barrel_sq_mm = (RG_BARREL_RADIUS * RG_BARREL_RADIUS) * 3.1451;  // 
 #endif
 
 const long utcOffsetInSeconds = 36000;       // Sydney is 10 hours ahead - you will have to readjust
@@ -291,9 +309,6 @@ void loop() {
 #ifdef WINDVANE
     readVane = analogRead(A0);
 
-    Serial.println();
-    Serial.print("Vane : ");
-    Serial.println( readVane );
     readVane -= WV_ANALOG_MIN;       // delete the offset value of the VR
     readVane = (readVane/wvPerDegree) + WV_ROD_OFFSET;  // Calculate the offset and figure out the true compass
     if (readVane > 360 ) {readVane -= 360;}
@@ -361,6 +376,22 @@ void loop() {
     rg_fiveMinuteSamples[0] = rg_trigsPerMinute;
     rg_fiveMinuteAverage += ( rg_trigsPerMinute / 5 );
 
+    Serial.println();
+    Serial.print("Rain Gauge Triggered : ");
+    Serial.println( rg_trigsPerMinute );
+    Serial.print("Millilitres per Bucket: ");
+    Serial.println( RG_MILLILITRES_PER_BUCKET );
+    Serial.print("Bucket Millitres in last minute : ");
+    Serial.println( RG_MILLILITRES_PER_BUCKET * rg_trigsPerMinute );
+    Serial.print("Bucket Millitres since boot : ");
+    Serial.println( RG_MILLILITRES_PER_BUCKET * rg_totalTrigs );
+    Serial.print("Rain Mils since boot : ");
+    Serial.println( rg_totalTrigs / RG_BUCKETS_PER_RAIN_ML  );
+    Serial.print("Rain Mils last minute : ");
+    Serial.println( rg_trigsPerMinute / RG_BUCKETS_PER_RAIN_ML );
+    Serial.print("Rain Mils 5 minute Average : ");
+    Serial.println( rg_fiveMinuteAverage / RG_BUCKETS_PER_RAIN_ML );
+
 #endif
     Serial.println();
     Serial.print("Free Heap : ");
@@ -401,10 +432,10 @@ void loop() {
         request += rs_fiveMinuteAverage;        // average rate over 5 minutes
 #endif
 #ifdef RAINGAUGE
-        request += ",\"rainGaugeCount\":";
-        request += rg_trigsPerMinute;           // absolute value of rain in last minute
-        request += ",\"rainGauge5MinAvg\":";
-        request += rg_fiveMinuteAverage;        // average rate over 5 minutes
+        request += ",\"rainGaugeMils\":";
+        request += rg_trigsPerMinute / RG_BUCKETS_PER_RAIN_ML;               // absolute value of rain in last minute
+        request += ",\"rainGauge5MinAvgMils\":";
+        request += rg_fiveMinuteAverage / RG_BUCKETS_PER_RAIN_ML;        // average rate over 5 minutes
 #endif
 #ifdef WINDVANE
         request += ",\"windvane\":";
@@ -510,8 +541,12 @@ void handleRoot() {
   response += "<tr><td>Rain Sensor total triggers </td><td><b>" + String(rs_totalTrigs) + "</b></td></tr>";
 #endif
 #ifdef RAINGAUGE
+  response += "<tr><td>Rain Gauge last minute </td><td><b>" + String(rg_trigsPerMinute) + "</b></td></tr>";
   response += "<tr><td>Rain Gauge 5 minute triggers </td><td><b>" + String(rg_fiveMinuteAverage) + "</b></td></tr>";
   response += "<tr><td>Rain Gauge total triggers </td><td><b>" + String(rg_totalTrigs) + "</b></td></tr>";
+  response += "<tr><td>Rain Gauge Rain mils last minute </td><td><b>" + String(rg_trigsPerMinute / RG_BUCKETS_PER_RAIN_ML) + "</b></td></tr>";
+  response += "<tr><td>Rain Gauge 5 Avg rain mils </td><td><b>" + String(rg_fiveMinuteAverage/ RG_BUCKETS_PER_RAIN_ML) + "</b></td></tr>";
+  response += "<tr><td>Rain Gauge total rain mils </td><td><b>" + String(rg_totalTrigs/ RG_BUCKETS_PER_RAIN_ML) + "</b></td></tr>";
 #endif
 #ifdef WINDVANE
  response += "<tr><td>Current Wind direction </td><td><b>" + vaneDirection + "</b></td></tr>";
@@ -548,7 +583,7 @@ void rebootDevice() {
 }
 
 #ifdef ANEMOMETER
-ICACHE_RAM_ATTR void anemometer_ISR()
+IRAM_ATTR void anemometer_ISR()
 {
   an_triggered += 1;
   an_totalTrigs += 1;
@@ -556,7 +591,7 @@ ICACHE_RAM_ATTR void anemometer_ISR()
 #endif
 
 #ifdef RAINSENSOR
-ICACHE_RAM_ATTR void rainSensor_ISR()
+IRAM_ATTR void rainSensor_ISR()
 {
   rs_triggered += 1;
   rs_totalTrigs += 1;
@@ -564,7 +599,7 @@ ICACHE_RAM_ATTR void rainSensor_ISR()
 #endif
 
 #ifdef RAINGAUGE
-ICACHE_RAM_ATTR void rainGauge_ISR()
+IRAM_ATTR void rainGauge_ISR()
 {
   rg_triggered += 1;
   rg_totalTrigs += 1;
@@ -580,13 +615,10 @@ String getInternetTime() {
 String fullDate ( unsigned long epoch ) {
   static unsigned char month_days[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
   static unsigned char week_days[7] = {4, 5, 6, 0, 1, 2, 3}; //Thu=4, Fri=5, Sat=6, Sun=0, Mon=1, Tue=2, Wed=3
-  unsigned char ntp_hour, ntp_minute, ntp_second, ntp_week_day, ntp_date, ntp_month, leap_days ;
+  unsigned char ntp_hour, ntp_minute, ntp_second, ntp_week_day, ntp_date, ntp_month, leap_days=0 ;
   String dow, sMonth;
   unsigned short temp_days;
-  unsigned int ntp_year, days_since_epoch, day_of_year, leap_year_ind;
-
-  leap_days = 0;
-  leap_year_ind = 0;
+  unsigned int ntp_year, days_since_epoch, day_of_year;
 
   ntp_second = epoch % 60;
   epoch /= 60;
@@ -611,7 +643,7 @@ String fullDate ( unsigned long epoch ) {
   if (((ntp_year % 4 == 0) && (ntp_year % 100 != 0)) || (ntp_year % 400 == 0))
   {
     month_days[1] = 29;   //February = 29 days for leap years
-    leap_year_ind = 1;    //if current year is leap, set indicator to 1
+//    leap_year_ind = 1;    //if current year is leap, set indicator to 1
   }
   else month_days[1] = 28; //February = 28 days for non-leap years
 
