@@ -67,10 +67,11 @@
   -------------------------------------
 
 */
-#define VERSION 1.05            // EEPROM save of Max wind speed.
-                                // 1.04 Calibration values, reboot remote
-// Time Client, uptimes
-// AP Arrays, 5 minute averages
+#define VERSION 1.06            // Rain Gauge code, some fixes for wind vane
+// 1.05 EEPROM save of Max wind speed.
+// 1.04 Calibration values, reboot remote
+// 1.03 Time Client, uptimes
+// 1.02 AP Arrays, 5 minute averages
 // 1.00 Initial version
 
 // #define C3MINI
@@ -133,15 +134,15 @@ unsigned int numberOfPolls;             // Total # of polls since rebooted
 
 #ifdef ANEMOMETER
 const int anemometerPin = D2;
-unsigned int an_triggered = 1;                           // Count of the number of Hall triggers
+unsigned int an_triggered = 1;              // Count of the number of Hall triggers
 unsigned int an_totalTrigs;                 // Just for fun - number of triggerings since boot.
-unsigned int gustSpeed = 0;                          // define gusts as + 20%
-unsigned int largestGust = 0;                        // The ubiquitoius self explanatory variable
+unsigned int gustSpeed = 0;                 // define gusts as + 20%
+unsigned int largestGust = 0;               // The ubiquitoius self explanatory variable
 unsigned long timeOfLargestGust;            // how long ago the gust ran
 
-float an_RPM = 0;                      // there are 2 transitions per magnet per rev
-float an_fiveMinuteAverage = 0.0 ;               // should be obvious what is going on
-int an_fiveMinuteSamples[5] = {0, 0, 0, 0, 0} ;  // roughly one poll every minute
+float an_RPM = 0;                               // there are 2 transitions per magnet per rev
+float an_fiveMinuteAverage = 0.0 ;              // should be obvious what is going on
+int an_fiveMinuteSamples[5] = {0, 0, 0, 0, 0} ; // roughly one poll every minute
 #endif
 
 volatile bool ledState = LOW;
@@ -222,7 +223,7 @@ void setup()
   pinMode( LED_BUILTIN, OUTPUT );
 
 #ifdef ANEMOMETER
-  pinMode( anemometerPin, INPUT);
+  pinMode( anemometerPin, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(anemometerPin), anemometer_ISR, HIGH);
 #endif
 
@@ -486,7 +487,7 @@ void connectWiFi() {
 #else
  #ifdef STATIC_IP
   WiFi.config( staticIP, gateway, subnet, dns1 );
-  WiFi.begin("HackDesk", "BigFurryCat");
+  WiFi.begin( "AP1", "AP2");        // Add your APs here
  #else 
   WiFi.hostname( nodeName );     // This will show up in your DHCP server
 
@@ -512,7 +513,7 @@ void connectWiFi() {
 void handleRoot() {
   String url = "<td><a href=http://" + String(host) + ">" + host + "</a><td></b>";
   Serial.println( url );
-  String response =  "<h2>You have reached the Anemometer</h2>";
+  String response =  "<h2>You have reached the Weather Station</h2>";
   response += "<b>This device polls at approximately 1 minute intervals.</b>";
   response += "<p></p><table style=\"width:600\">";
 #ifndef WINDVANE   // If we aren't using the ADC then why not do the voltage thing
