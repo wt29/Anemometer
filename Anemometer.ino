@@ -50,7 +50,7 @@
   #define PASSARRAY {<"password1">,<"password2">,<"password...">}  // Array of paswords matching you APs
   #define APCOUNT 4  // How many you have defined
 
-  #define HOST "<Your emoncms host fqdn>";            // eg  "emoncms.org" Required for logging. Note:just the host not the protocol
+  #define HOST "<Your emoncms host fqdn>"            // eg  "emoncms.org" Required for logging. Note:just the host not the protocol
   #define MYAPIKEY "<Your emoncms API write key>";    // Required Get it from your MyAccount details in your emoncms instance
   #define GUSTPERCENT                                 // How many RPM above the 5 minute average defines a "gust"
   #define CALIBRATION                                 // Future - a multiplier to convert RPM into whatever you are going to log - Knots, M/s, MPH etc
@@ -245,14 +245,14 @@ void setup()
     Serial.println("Error setting up MDNS responder!");
   }
 
-  server.on("/", handleRoot);               // Call the 'handleRoot' function when a client requests URI "/"
-  server.onNotFound(handleNotFound);        // When a client requests an unknown URI (i.e. something other than "/"), call function "handleNotFound"
-  server.on("/reboot", rebootDevice);       // Kick over remotely
-
-  server.begin();                           // Actually start the server
+  server.on("/", handleRoot);                   // Call the 'handleRoot' function when a client requests URI "/"
+  server.onNotFound(handleNotFound);            // When a client requests an unknown URI (i.e. something other than "/"), call function "handleNotFound"
+  server.on("/reboot", handleRebootDevice);     // Kick over remotely
+  server.on("/resetgusts", handleResetGusts);   // Fix the occasional stupid gust value
+  server.begin();                               // Actually start the server
   
   Serial.println("HTTP server started");
-  ArduinoOTA.begin();                       // Remote updates
+  ArduinoOTA.begin();                           // Remote updates
   ArduinoOTA.setHostname( nodeName );
 
   timeClient.begin();
@@ -576,7 +576,15 @@ void handleNotFound() {
   server.send(404, "text/plain", "404: Not found"); // Send HTTP status 404 (Not Found) when there's no handler for the URI in the request
 }
 
-void rebootDevice() {
+void handleResetGusts() {                           // Sometimes the max gust number is stupid.
+  EEPROM.put( 0, 0 );
+  EEPROM.put( 4, timeOfLargestGust );
+  EEPROM.commit();
+  server.send(200, "text/plain", "Max Gust and Time set to 0"); // Let em know
+  millisDelay(5000);      // Hang around
+}
+
+void handleRebootDevice() {
   Serial.println( "In reboot Device" );
   server.send(200, "text/html", "<h1>Rebooting " + String(nodeName) + " in 5 seconds</h1>"); // Warn em
   millisDelay( 5000 );
