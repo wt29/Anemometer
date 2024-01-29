@@ -434,9 +434,11 @@ void loop() {
 #endif
 #ifdef RAINGAUGE
         request += ",\"rainGaugeMils\":";
-        request += rg_trigsPerMinute / RG_BUCKETS_PER_RAIN_ML;               // absolute value of rain in last minute
+        request += rg_trigsPerMinute / RG_BUCKETS_PER_RAIN_ML;           // absolute value of rain in last minute
         request += ",\"rainGauge5MinAvgMils\":";
         request += rg_fiveMinuteAverage / RG_BUCKETS_PER_RAIN_ML;        // average rate over 5 minutes
+        request += ",\"rainGaugeTotalTrigs\":";
+        request += rg_totalTrigs;                                        // Number of triggers
 #endif
 #ifdef WINDVANE
         request += ",\"windvane\":";
