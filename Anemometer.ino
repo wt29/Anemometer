@@ -113,14 +113,14 @@ const int gustPercent = GUSTPERCENT;
  WiFiMulti wifiMulti;
  WebServer server(80);
 #else
- ESP8266WiFiMulti wifiMulti;     // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
- ESP8266WebServer server(80);    // Create a webserver object that listens for HTTP request on port 80
+ ESP8266WiFiMulti wifiMulti;      // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
+ ESP8266WebServer server(80);     // Create a webserver object that listens for HTTP request on port 80
 #endif
-WiFiClient client;              // Instance of WiFi Client
+WiFiClient client;                // Instance of WiFi Client
 
-void handleRoot();              // function prototypes for HTTP handlers
-void handleNotFound();          // Something it don't understand
-void rebootDevice();            // Kick it over remotely
+void handleRoot();                // function prototypes for HTTP handlers
+void handleNotFound();            // Something it don't understand
+void rebootDevice();              // Kick it over remotely
 
 const uint32_t waitForWiFi = 5000 ;         // How long to wait for the WiFi to connect - 5 Seconds should be enough
 int startWiFi;
@@ -144,8 +144,6 @@ float an_RPM = 0;                               // there are 2 transitions per m
 float an_fiveMinuteAverage = 0.0 ;              // should be obvious what is going on
 int an_fiveMinuteSamples[5] = {0, 0, 0, 0, 0} ; // roughly one poll every minute
 #endif
-
-volatile bool ledState = LOW;
 
 #ifdef WINDVANE
 int windVanePin = A0;           // An analog pin
@@ -193,6 +191,9 @@ String timeString;
 String startTime;
 unsigned long startAbsoluteTime;    // How long have we been running for?
 
+const int ledPin = LED_BUILTIN;
+int ledState = LOW;
+
 //-----------------------------------------
 void setup()
 {
@@ -200,7 +201,7 @@ void setup()
   Serial.begin(115200);     // baud rate
   millisDelay(1) ;          // allow the serial to init
   Serial.println();         // clean up a little
-  
+
   for (int i = 0; i < APCOUNT; i++) {
     wifiMulti.addAP( accessPoints[i], passwords[i] );     // Add all the APs and passwords from the arrays
   }
@@ -209,19 +210,19 @@ void setup()
   connectWiFi();        // This thing isn't any use without WiFi
 
 #ifdef ANEMOMETER  
-  EEPROM.begin(32);                 // this number in "begin()" is ESP8266. EEPROM is emulated so you need buffer to emulate.
-  EEPROM.get(0,largestGust);            // Should read 4 bytes for each of these thangs
+  EEPROM.begin(32);                       // this number in "begin()" is ESP8266. EEPROM is emulated so you need buffer to emulate.
+  EEPROM.get(0,largestGust);              // Should read 4 bytes for each of these thangs
   if ( isnan( largestGust ) ) { largestGust = 0; }  // Having issues during devel with "nan" (not a number) being written to EEPROM
   EEPROM.get(4,timeOfLargestGust);
-  if (largestGust > 20000) {            // Hurricane Strength - sometimes first value is stupid
+  if (largestGust > 20000) {              // Hurricane Strength - sometimes first value is stupid
    largestGust = 0;
    EEPROM.put( 0, largestGust );
    EEPROM.commit();
   }
 #endif
 
-  pinMode( LED_BUILTIN, OUTPUT );
-
+  pinMode( ledPin, OUTPUT );
+  
 #ifdef ANEMOMETER
   pinMode( anemometerPin, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(anemometerPin), anemometer_ISR, HIGH);
@@ -268,7 +269,7 @@ void loop() {
   server.handleClient();                         // Listen for HTTP requests from clients
   ArduinoOTA.handle();
 #ifdef DEBUG
-  digitalWrite(LED_BUILTIN, ledState);           // only useful for demo. If running on battery, this should be commented out
+//  digitalWrite(ledPin, ledState);           // only useful for demo. If running on battery, this should be commented out
 #endif
   if ( millis() > lastRun + 60000 ) {             // only want this happening every minute (or so) 
     lastRun = millis();                           // don't want to add Wifi Connection latency to the poll
@@ -404,9 +405,9 @@ void loop() {
     if (WiFi.status() != WL_CONNECTED ) {
       Serial.println("Connection failed!]");
       for (int i = 0; i <= 2; i++) {          // flash 3 times.
-        digitalWrite(LED_BUILTIN, true);      // This is crap. Should be something async like Bob overeasy does it.
+        digitalWrite(ledPin, HIGH);      // This is crap. Should be something async like Bob overeasy does it.
         millisDelay(.5);
-        digitalWrite(LED_BUILTIN, false);
+        digitalWrite(ledPin, LOW);
         millisDelay(.5);
       }
 
@@ -598,6 +599,17 @@ IRAM_ATTR void anemometer_ISR()
 {
   an_triggered += 1;
   an_totalTrigs += 1;
+
+  if( ledState == 1 )            // LED is active LOW
+   { 
+      ledState = 0;
+   }
+    else
+   { 
+      ledState = 1;
+   } 
+  digitalWrite( ledPin, ledState ); 
+
 }
 #endif
 
@@ -614,6 +626,17 @@ IRAM_ATTR void rainGauge_ISR()
 {
   rg_triggered += 1;
   rg_totalTrigs += 1;
+
+  if( ledState == 1 )            // LED is active LOW
+   { 
+      ledState = 0;
+   }
+    else
+   { 
+      ledState = 1;
+   } 
+  digitalWrite( ledPin, ledState ); 
+
 }
 #endif
 
