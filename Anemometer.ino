@@ -105,15 +105,17 @@
 const char* nodeName = NODENAME;
 const char* host = HOST;
 const char* APIKEY = MYAPIKEY;
-const char* passwords[] = PASSARRAY;
-const char* accessPoints[] = APARRAY;
+const char* ssid = LOCALSSID;
+const char* password = WIFIPASSWORD;
+//const char* passwords[] = PASSARRAY;
+//const char* accessPoints[] = APARRAY;
 const int gustPercent = GUSTPERCENT;
 
 #ifdef C3MINI
  WiFiMulti wifiMulti;
  WebServer server(80);
 #else
- ESP8266WiFiMulti wifiMulti;      // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
+//  ESP8266WiFiMulti wifiMulti;      // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
  ESP8266WebServer server(80);     // Create a webserver object that listens for HTTP request on port 80
 #endif
 WiFiClient client;                // Instance of WiFi Client
@@ -202,9 +204,9 @@ void setup()
   millisDelay(1) ;          // allow the serial to init
   Serial.println();         // clean up a little
 
-  for (int i = 0; i < APCOUNT; i++) {
-    wifiMulti.addAP( accessPoints[i], passwords[i] );     // Add all the APs and passwords from the arrays
-  }
+//  for (int i = 0; i < APCOUNT; i++) {
+//    wifiMulti.addAP( accessPoints[i], passwords[i] );     // Add all the APs and passwords from the arrays
+//  }
 
   WiFi.mode(WIFI_STA);  // Station Mode
   connectWiFi();        // This thing isn't any use without WiFi
@@ -472,44 +474,32 @@ void loop() {
 }       // Loop
 
 void connectWiFi() {
-  // Serial.println( nodeName );
 
-#ifdef BASIC_WIFI
- WiFi.begin("LivingRoom", "BigFurryCat");
-
- Serial.print("Connecting");
- while (WiFi.status() != WL_CONNECTED)
- {
-   delay(500);
-   Serial.print(".");
- }
-  Serial.println();
-  Serial.print("Connected, IP address: ");
-  Serial.println(WiFi.localIP());
-
-#else
- #ifdef STATIC_IP
-  WiFi.config( staticIP, gateway, subnet, dns1 );
-  WiFi.begin( "AP1", "AP2");        // Add your APs here
- #else 
-  WiFi.hostname( nodeName );     // This will show up in your DHCP server
-
-   if (wifiMulti.run(waitForWiFi) == WL_CONNECTED) {
-    
-    startWiFi = millis() ;        // When we started waiting
-
-    while ((WiFi.status() != WL_CONNECTED) && ( (millis() - startWiFi) < waitForWiFi ))
-    {
-      millisDelay(500);
-      Serial.print(".");
-    }
-  }
-  #endif
+#ifdef STATIC_IP  
+ WiFi.config( staticIP, gateway, subnet, dns1 );
 #endif
-    Serial.println("");
-    Serial.print("IP Address: ");
-    Serial.println( WiFi.localIP());
-    Serial.printf("Connection status: %d\n", WiFi.status());
+  String newHostName = NODENAME;
+  WiFi.setHostname( newHostName.c_str() );     // This will show up in your DHCP server
+  WiFi.begin(ssid, password);
+
+  String strDebug = ssid ;
+  strDebug += "  ";
+  strDebug +=  password;
+  Serial.println( strDebug );
+  
+  startWiFi = millis() ;        // When we started waiting
+  // Loop and wait 
+  while ((WiFi.status() != WL_CONNECTED) && ( (millis() - startWiFi) < waitForWiFi ))
+  {
+    delay(500);
+    Serial.print(".");
+  }
+
+//  tft.print("");
+  Serial.println("");
+  Serial.print("IP Address: ");
+  Serial.println( WiFi.localIP());
+  Serial.printf("Connection status: %d\n", WiFi.status());
 
 }
 
